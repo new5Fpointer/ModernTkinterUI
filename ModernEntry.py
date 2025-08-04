@@ -131,11 +131,15 @@ class ModernEntry(tk.Canvas):
 
         def _global_tab(event):
             focus = event.widget.focus_get()
-            if focus is None or not isinstance(focus, ModernEntry):
-                if ModernEntry._first_entry and ModernEntry._first_entry.winfo_exists():
-                    ModernEntry._first_entry.focus_set()
-                    return "break"
+            # 如果焦点已经是 ModernEntry，让系统自己处理
+            if isinstance(focus, ModernEntry):
+                return None
+            # 否则把焦点给第一个 ModernEntry
+            if ModernEntry._first_entry and ModernEntry._first_entry.winfo_exists():
+                ModernEntry._first_entry.focus_set()
+                return "break"
             return None
+
         root.bind_all("<Tab>", _global_tab, add="+")
 
     def _fix_index(self, idx):
@@ -257,8 +261,9 @@ class ModernEntry(tk.Canvas):
             self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
 
     def _on_tab(self, event):
-        event.widget.tk_focusNext().focus()
-        return "break"
+        """event.widget.tk_focusNext().focus()
+        return "break"""
+        pass
 
     def _create_cursor(self):
         if self.cursor is None:
