@@ -263,7 +263,7 @@ class ModernEntry(tk.Canvas):
         points.extend([x1, top])
         points.extend(self._get_arc_points(left, top, radius, math.pi, math.pi * 1.5))
         points.extend([right, y1])
-        points.extend(self._get_arc_points(right, top, radius, math.pi * 1.5, math.pi ))
+        points.extend(self._get_arc_points(right, top, radius, math.pi * 1.5, math.pi * 2))
         points.extend([x2, bottom])
         points.extend(self._get_arc_points(right, bottom, radius, 0, math.pi * 0.5))
         points.extend([left, y2])
