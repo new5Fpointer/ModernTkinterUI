@@ -1,7 +1,7 @@
 # button.py
 import tkinter as tk
 import math
-import tkinter.font as tkfont  # 修复导入方式
+import tkinter.font as tkfont
 
 class RoundedButton(tk.Canvas):
     """自定义圆角按钮控件"""
@@ -75,7 +75,7 @@ class RoundedButton(tk.Canvas):
         left = x1 + radius
         right = x2 - radius
         
-        # 顺时针绘制路径
+        # 绘制路径
         points.extend([x1, top])
         points.extend(self._get_arc_points(left, top, radius, math.pi, math.pi*1.5))
         points.extend([right, y1])
@@ -84,7 +84,7 @@ class RoundedButton(tk.Canvas):
         points.extend(self._get_arc_points(right, bottom, radius, 0, math.pi*0.5))
         points.extend([left, y2])
         points.extend(self._get_arc_points(left, bottom, radius, math.pi*0.5, math.pi))
-        points.extend([x1, top])  # 闭合路径
+        points.extend([x1, top])
         
         return self.create_polygon(points, **kwargs, smooth=True)
     
@@ -103,7 +103,7 @@ class RoundedButton(tk.Canvas):
         if 'command' in kwargs:
             self.command = kwargs['command']
         
-        # 更新颜色配置
+        # 颜色配置
         color_changed = False
         color_keys = ['button_color', 'hover_color', 'press_color', 'text_color', 'outline_color']
         for key in color_keys:
