@@ -126,6 +126,8 @@ class ModernEntry(tk.Canvas):
         self._parent = master
         self._parent.bind("<Configure>", self._on_resize, add="+")
 
+        self._on_resize
+
     def _on_tab(self, event):
         event.widget.tk_focusNext().focus()
         return "break"
@@ -280,6 +282,7 @@ class ModernEntry(tk.Canvas):
 
     def _on_resize(self, event):
         """父容器大小变化时，强制更新 Canvas 宽度"""
+        print(f'Resize!\nNow size:',event.width,event.height)
         new_width = event.width - 100  # 减去 padding
         self.config(width=new_width)
         self.height = self.winfo_height()
@@ -407,7 +410,7 @@ class DemoApp:
         setattr(self, f"entry_{row}", entry)
         
         # 配置列权重
-        parent.columnconfigure(1, weight=1)
+        #parent.columnconfigure(1, weight=1)
         
     def submit_form(self):
         """提交表单数据"""
@@ -438,25 +441,6 @@ class DemoApp:
         self.entry_1.set("")
         self.entry_2.set("")
         self.root.focus()
-
-class MyWindow(tk.Tk):
-    def __init__(self):
-        super(MyWindow, self).__init__()
-        self.title('我是无辜的窗口')
-        self.geometry('400x300')
-
-        # 绑定动作 <Configure>
-        self.bind('<Configure>', self.myCall)
-
-    # 定义触发的事件
-    def myCall(self, event=None):
-        print('调用 myCall 函数')
-        print('此时窗口尺寸为：{}x{}'.format(self.winfo_width(),self.winfo_height()))
-
-if __name__ == '__main__':
-    myWindow = MyWindow()
-    myWindow.mainloop()
-
 
 if __name__ == "__main__":
     root = tk.Tk()
