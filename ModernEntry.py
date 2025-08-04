@@ -102,9 +102,7 @@ class ModernEntry(tk.Canvas):
         self._text_left = 0           # 当前文本在画布中的 x 偏移（负值表示向左滚）
         self._max_text_width = None   # 缓存文本最大可显示宽度
 
-        self.rect_id = self._draw_rounded_rect(
-            1, 1, width - 1, height - 1,
-            fill=bg_color, outline=border_normal, radius=radius)
+        
 
         font_height = self._font.metrics("linespace")
         self.text_x = 12
@@ -115,6 +113,7 @@ class ModernEntry(tk.Canvas):
             self.text_x, self.text_y,
             text=placeholder, anchor="nw",
             fill=placeholder_color, font=self._font)
+        self._redraw_rect(width, height)  
 
         self.cursor = None
         self.bind("<Button-1>", self._on_click)
@@ -268,7 +267,7 @@ class ModernEntry(tk.Canvas):
             self.cursor.show() 
             ModernEntry._active_cursor.cursor.stop_blinking()
         ModernEntry._active_cursor = self
-        self.itemconfig(self.rect_id, outline=self.border_focus)
+        self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
         if not self._text:
             self.itemconfig(self.text_id, text="", fill=self.text_color)
         if self.cursor:
@@ -284,7 +283,7 @@ class ModernEntry(tk.Canvas):
                 self.cursor.stop_blinking()
                 self.cursor.hide()
             ModernEntry._active_cursor = None
-        self.itemconfig(self.rect_id, outline=self.border_normal)
+        self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=False)
 
     def _on_tab(self, event):
         """event.widget.tk_focusNext().focus()
@@ -311,33 +310,6 @@ class ModernEntry(tk.Canvas):
         cursor_y = self.text_y + self.cursor_y_offset
         if self.cursor:
             self.cursor.move(cursor_x, cursor_y)
-
-    def _draw_rounded_rect(self, x1, y1, x2, y2, **kwargs):
-        radius = kwargs.pop('radius', 6)
-        if radius == 0:
-            return self.create_rectangle(x1, y1, x2, y2, **kwargs)
-        points = []
-        top = y1 + radius
-        bottom = y2 - radius
-        left = x1 + radius
-        right = x2 - radius
-        points.extend([x1, top])
-        points.extend(self._get_arc_points(left, top, radius, math.pi, math.pi * 1.5))
-        points.extend([right, y1])
-        points.extend(self._get_arc_points(right, top, radius, math.pi * 1.5, math.pi * 2))
-        points.extend([x2, bottom])
-        points.extend(self._get_arc_points(right, bottom, radius, 0, math.pi * 0.5))
-        points.extend([left, y2])
-        points.extend(self._get_arc_points(left, bottom, radius, math.pi * 0.5, math.pi))
-        points.extend([x1, top])
-        return self.create_polygon(points, **kwargs, smooth=True, width=1)
-
-    def _get_arc_points(self, cx, cy, radius, start_angle, end_angle, segments=8):
-        points = []
-        for i in range(segments + 1):
-            angle = start_angle + (end_angle - start_angle) * i / segments
-            points.extend([cx + radius * math.cos(angle), cy + radius * math.sin(angle)])
-        return points
 
     def _scroll_to_cursor(self):
         """保证光标始终可见，且精确落在两字符之间"""
@@ -370,33 +342,61 @@ class ModernEntry(tk.Canvas):
         self._update_cursor()
 
     def _on_resize(self, event):
-        w = self.winfo_width()
-        h = self.winfo_height()
+        w, h = event.width, event.height
+        self._redraw_rect(w, h, focus=(self.focus_get() == self))
 
-        # 1. 原地更新边框尺寸
-        self.coords(self.rect_id,
-                    0, 0, w, h)
-        # 2. 更新圆角半径
-        self.itemconfig(self.rect_id,
-                        smooth=False,
-                        radius=min(h // 2, self._radius))
-
-        # 3. 文字垂直居中
         font_height = self._font.metrics("linespace")
         self.text_y = (h - font_height) // 2
-        self.coords(self.text_id,
-                    self.text_x + self._text_left,
-                    self.text_y)
+        self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
 
-        # 4. 光标高度 & y 偏移
         if self.cursor is not None:
             cursor_h = max(14, font_height - 4)
             self.cursor.set_height(cursor_h)
             self.cursor_y_offset = (h - cursor_h) // 2
             self._update_cursor()
             self._scroll_to_cursor()
-        
-        
+    # -------------------------------------------------
+    #  统一画圆角矩形（背景 + 边框），并保证不越界
+    # -------------------------------------------------
+    def _redraw_rect(self, w, h, focus=False):
+        if hasattr(self, '_rect_bg'):
+            self.delete(self._rect_bg)
+        if hasattr(self, '_rect_outline'):
+            self.delete(self._rect_outline)
+
+        r = min(h // 2, self._radius)
+        x1, y1, x2, y2 = 0, 0, w - 1, h - 1
+        pts = self._rounded_rect_pts(x1, y1, x2, y2, r)
+
+        self._rect_bg = self.create_polygon(
+            pts, fill=self.bg_color, outline="", smooth=True)
+        self._rect_outline = self.create_polygon(
+            pts, fill="", outline=self.border_focus if focus else self.border_normal,
+            smooth=True, width=1)
+
+        self.tag_raise(self.text_id)
+        if getattr(self, 'cursor', None):  # ✅ 安全判断
+            self.tag_raise(self.cursor.cursor_id)
+
+    # -------------------------------------------------
+    #  圆角矩形坐标（顺时针，12 个点）
+    # -------------------------------------------------
+    def _rounded_rect_pts(self, x1, y1, x2, y2, r):
+        return [
+            x1+r, y1,              # 起点
+            x2-r, y1,
+            x2,   y1,
+            x2,   y1+r,
+            x2,   y2-r,
+            x2,   y2,
+            x2-r, y2,
+            x1+r, y2,
+            x1,   y2,
+            x1,   y2-r,
+            x1,   y1+r,
+            x1,   y1
+        ]
+    
 # ---------- DemoApp ----------
 class DemoApp:
     def __init__(self, root):
