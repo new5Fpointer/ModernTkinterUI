@@ -131,7 +131,8 @@ class ModernEntry(tk.Canvas):
         if ModernEntry._first_entry is None:
             ModernEntry._first_entry = self
         self._bind_root_tab()
-
+        self.tag_raise(self.text_id)
+        
     def _bind_root_tab(self):
         root = self._root()
         if getattr(root, "_modern_tab_bound", None):
@@ -204,10 +205,12 @@ class ModernEntry(tk.Canvas):
         return self._text
 
     def _refresh_text_and_cursor(self):
-        self.itemconfig(self.text_id, text=self._text or "",
-                        fill=self.text_color if self._text else self.placeholder_color)
+    # 根据当前 _text 实时决定显示什么
+        show_text   = self._text if self._text else self.placeholder
+        show_color  = self.text_color if self._text else self.placeholder_color
+        self.itemconfig(self.text_id, text=show_text, fill=show_color)
         self._update_cursor()
-        self._scroll_to_cursor()   # 新增
+        self._scroll_to_cursor()
 
     def _on_click(self, event):
         if self.cursor is None:
@@ -268,8 +271,6 @@ class ModernEntry(tk.Canvas):
             ModernEntry._active_cursor.cursor.stop_blinking()
         ModernEntry._active_cursor = self
         self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
-        if not self._text:
-            self.itemconfig(self.text_id, text="", fill=self.text_color)
         if self.cursor:
             self.cursor.start_blinking()
         if self.cursor is None:
@@ -352,9 +353,9 @@ class ModernEntry(tk.Canvas):
         if self.cursor is not None:
             cursor_h = max(14, font_height - 4)
             self.cursor.set_height(cursor_h)
-            self.cursor_y_offset = (h - cursor_h) // 2
             self._update_cursor()
             self._scroll_to_cursor()
+        
     # -------------------------------------------------
     #  统一画圆角矩形（背景 + 边框），并保证不越界
     # -------------------------------------------------
