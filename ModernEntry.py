@@ -78,11 +78,14 @@ class ModernEntry(tk.Canvas):
     """现代风格输入框组件"""
     _active_cursor = None
 
-    def __init__(self, master, width=240, height=36, radius=6,
+    def __init__(self, master, width=240, height=36, radius=4,
                  bg_color="#2d2d2d", border_normal="#444444",
                  border_focus="#4ec9b0", text_color="#e0e0e0",
                  placeholder="", placeholder_color="#888888",
-                 font_family="Segoe UI", font_size=12, **kwargs):
+                 font_family="Segoe UI", font_size=12,
+                 fixed_size=True,  # 🔥 新增：是否固定尺寸
+                 **kwargs):
+        
         super().__init__(master, width=width, height=height,
                          highlightthickness=0, bd=0, bg=bg_color)
         self.bg_color = bg_color
@@ -96,9 +99,10 @@ class ModernEntry(tk.Canvas):
         self._font = tkfont.Font(family=font_family, size=font_size)
         
         self._cursor_height = 18
-        # 修复了rect_id的绘制范围
+        self._radius = radius  # 保存半径值
+        
         self.rect_id = self._draw_rounded_rect(
-            0, 0, width, height,
+            1, 1, width-1, height-1,
             fill=bg_color,
             outline=border_normal,
             radius=radius
@@ -123,10 +127,12 @@ class ModernEntry(tk.Canvas):
         self.bind("<FocusIn>", self._on_focus_in)
         self.bind("<FocusOut>", self._on_focus_out)
         self.bind("<Tab>", self._on_tab)
-        self._parent = master
-        self._parent.bind("<Configure>", self._on_resize, add="+")
-
-        self._on_resize
+        if fixed_size:
+            self.bind("<Configure>", lambda e: "break")
+        
+        # 保存原始配置
+        self._fixed_size = fixed_size
+        self._radius = radius
 
     def _on_tab(self, event):
         event.widget.tk_focusNext().focus()
@@ -184,6 +190,7 @@ class ModernEntry(tk.Canvas):
                 if distance < min_distance:
                     min_distance = distance
                     self._cursor_pos = i
+        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))  # 边界检查
         self._update_cursor()
         self.focus_set()
 
@@ -212,6 +219,7 @@ class ModernEntry(tk.Canvas):
             self._text = self._text[:self._cursor_pos] + event.char + self._text[self._cursor_pos:]
             self._cursor_pos += 1
         
+        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))  # 边界检查
         self.itemconfig(self.text_id, text=self._text, fill=self.text_color)
         self._update_cursor()
 
@@ -232,6 +240,7 @@ class ModernEntry(tk.Canvas):
         self._update_cursor()
 
     def insert(self, idx, txt):
+        idx = max(0, min(idx, len(self._text)))  # 边界检查
         self._text = self._text[:idx] + txt + self._text[idx:]
         self._cursor_pos = idx + len(txt)
         self.itemconfig(self.text_id, text=self._text, fill=self.text_color)
@@ -265,7 +274,7 @@ class ModernEntry(tk.Canvas):
         points.extend([x1, top])
         points.extend(self._get_arc_points(left, top, radius, math.pi, math.pi * 1.5))
         points.extend([right, y1])
-        points.extend(self._get_arc_points(right, top, radius, math.pi * 1.5, math.pi * 2))
+        points.extend(self._get_arc_points(right, top, radius, math.pi * 1.5, math.pi *2))
         points.extend([x2, bottom])
         points.extend(self._get_arc_points(right, bottom, radius, 0, math.pi * 0.5))
         points.extend([left, y2])
@@ -281,26 +290,31 @@ class ModernEntry(tk.Canvas):
         return points
 
     def _on_resize(self, event):
-        """父容器大小变化时，强制更新 Canvas 宽度"""
-        print(f'Resize!\nNow size:',event.width,event.height)
-        new_width = event.width - 100  # 减去 padding
-        self.config(width=new_width)
-        self.height = self.winfo_height()
+        """修复：正确处理父容器大小变化"""
+        try:
+            new_width = max(100, event.width - 100)  # 确保最小宽度
+            self.config(width=new_width)
+            
+            # 重绘边框，保持原始半径
+            self.delete(self.rect_id)
+            self.rect_id = self._draw_rounded_rect(
+                1, 1, new_width - 1, self.winfo_height() - 1,
+                fill=self.bg_color,
+                outline=self.border_focus if ModernEntry._active_cursor == self else self.border_normal,
+                radius=self._radius  # 使用保存的半径
+            )
+            
+            # 更新文本位置
+            font_height = self._font.metrics("linespace")
+            self.text_y = (self.winfo_height() - font_height) // 2
+            self.coords(self.text_id, self.text_x, self.text_y)
+            
+            # 更新光标
+            self._update_cursor()
+        except tk.TclError:
+            # 窗口已销毁时忽略错误
+            pass
 
-        # 重绘边框
-        self.delete(self.rect_id)
-        self.rect_id = self._draw_rounded_rect(
-            1, 1, new_width - 1, self.height - 1,
-            fill=self.bg_color,
-            outline=self.border_focus if ModernEntry._active_cursor == self else self.border_normal,
-            radius=2
-        )
-
-        # 更新文本和光标
-        font_height = self._font.metrics("linespace")
-        self.text_y = (self.height - font_height) // 2
-        self.coords(self.text_id, self.text_x, self.text_y)
-        self._update_cursor()
 
 class DemoApp:
     """紧凑布局的演示应用程序"""
@@ -410,7 +424,7 @@ class DemoApp:
         setattr(self, f"entry_{row}", entry)
         
         # 配置列权重
-        #parent.columnconfigure(1, weight=1)
+        parent.columnconfigure(1, weight=1)
         
     def submit_form(self):
         """提交表单数据"""
