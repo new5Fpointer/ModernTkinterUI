@@ -126,6 +126,8 @@ class ModernEntry(tk.Canvas):
         self.bind("<Tab>", self._on_tab)
         if fixed_size:
             self.bind("<Configure>", lambda e: "break")
+        else:
+            self.bind("<Configure>", self._on_resize)
 
         if ModernEntry._first_entry is None:
             ModernEntry._first_entry = self
@@ -368,24 +370,33 @@ class ModernEntry(tk.Canvas):
         self._update_cursor()
 
     def _on_resize(self, event):
-            """窗口大小改变时重新滚动"""
-            try:
-                new_width = max(100, event.width - 100)
-                self.config(width=new_width)
-                self.delete(self.rect_id)
-                self.rect_id = self._draw_rounded_rect(
-                    1, 1, new_width - 1, self.winfo_height() - 1,
-                    fill=self.bg_color,
-                    outline=self.border_focus if ModernEntry._active_cursor == self else self.border_normal,
-                    radius=self._radius)
-                font_height = self._font.metrics("linespace")
-                self.text_y = (self.winfo_height() - font_height) // 2
-                self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
-                self._update_cursor()
-                self._scroll_to_cursor()
-            except tk.TclError:
-                pass
+        w = self.winfo_width()
+        h = self.winfo_height()
 
+        # 1. 原地更新边框尺寸
+        self.coords(self.rect_id,
+                    0, 0, w, h)
+        # 2. 更新圆角半径
+        self.itemconfig(self.rect_id,
+                        smooth=False,
+                        radius=min(h // 2, self._radius))
+
+        # 3. 文字垂直居中
+        font_height = self._font.metrics("linespace")
+        self.text_y = (h - font_height) // 2
+        self.coords(self.text_id,
+                    self.text_x + self._text_left,
+                    self.text_y)
+
+        # 4. 光标高度 & y 偏移
+        if self.cursor is not None:
+            cursor_h = max(14, font_height - 4)
+            self.cursor.set_height(cursor_h)
+            self.cursor_y_offset = (h - cursor_h) // 2
+            self._update_cursor()
+            self._scroll_to_cursor()
+        
+        
 # ---------- DemoApp ----------
 class DemoApp:
     def __init__(self, root):
@@ -430,6 +441,9 @@ class DemoApp:
             activeforeground="#ffffff", relief="flat", padx=20, pady=6,
             command=self.clear_form)
         clear_btn.pack(side="right")
+        container.columnconfigure(0, weight=1)   # 如果有多列
+        container.rowconfigure(2, weight=1)      # form_frame 所在行
+        form_frame.columnconfigure(1, weight=1)
 
     def _create_labeled_entry(self, parent, label_text, placeholder, row):
         label = tk.Label(
@@ -439,8 +453,8 @@ class DemoApp:
 
         entry = ModernEntry(
             parent, width=260, height=36, placeholder=placeholder,
-            font_family="Segoe UI", font_size=12)
-        entry.grid(row=row, column=1, padx=(0, 10), pady=8, sticky="w")
+            font_family="Segoe UI", font_size=12,fixed_size=False)
+        entry.grid(row=row, column=1, padx=(0, 10), pady=8, sticky="nsew")
         setattr(self, f"entry_{row}", entry)
         parent.columnconfigure(1, weight=1)
 
