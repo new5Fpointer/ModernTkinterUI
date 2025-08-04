@@ -67,6 +67,12 @@ class PureCursor:
             self.canvas.delete(self.cursor_id)
         except tk.TclError:
             pass
+    
+    def hide(self):
+        self.canvas.itemconfig(self.cursor_id, state='hidden')
+
+    def show(self):
+        self.canvas.itemconfig(self.cursor_id, state='normal')
 
 # ---------- ModernEntry ----------
 class ModernEntry(tk.Canvas):
@@ -176,11 +182,22 @@ class ModernEntry(tk.Canvas):
     def set(self, text):
         self._text = text
         self._cursor_pos = len(text)
+        self._text_left = 0
+        self.coords(self.text_id, self.text_x, self.text_y)
+
+        # 1. 立即显示占位符或文本
         if text:
             self.itemconfig(self.text_id, text=text, fill=self.text_color)
         else:
             self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
-        self._update_cursor()
+
+        # 2. 光标：不存在就创建并隐藏
+        if self.cursor is None:
+            self._create_cursor()
+            self.cursor.hide()
+
+        # 3. 滚动归零
+        self._scroll_to_cursor()
 
     def get(self):
         return self._text
@@ -246,6 +263,7 @@ class ModernEntry(tk.Canvas):
         if self.cursor is None:
             self._create_cursor()
         if ModernEntry._active_cursor:
+            self.cursor.show() 
             ModernEntry._active_cursor.cursor.stop_blinking()
         ModernEntry._active_cursor = self
         self.itemconfig(self.rect_id, outline=self.border_focus)
@@ -253,18 +271,18 @@ class ModernEntry(tk.Canvas):
             self.itemconfig(self.text_id, text="", fill=self.text_color)
         if self.cursor:
             self.cursor.start_blinking()
+        if self.cursor is None:
+            self._create_cursor()
+        self.cursor.show()
+        self.cursor.start_blinking()
 
     def _on_focus_out(self, event=None):
         if ModernEntry._active_cursor == self:
             if self.cursor:
                 self.cursor.stop_blinking()
+                self.cursor.hide()
             ModernEntry._active_cursor = None
         self.itemconfig(self.rect_id, outline=self.border_normal)
-        if not self._text:
-            self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
-        self._text_left = 0
-        self.coords(self.text_id, self.text_x, self.text_y)
-        self._update_cursor()
 
     def _on_tab(self, event):
         """event.widget.tk_focusNext().focus()
@@ -283,6 +301,7 @@ class ModernEntry(tk.Canvas):
                 blink_speed=450
             )
             self.cursor.stop_blinking()
+            self.cursor.hide() 
 
     def _update_cursor(self):
         substr = self._text[:self._cursor_pos]
