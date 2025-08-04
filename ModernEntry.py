@@ -93,6 +93,8 @@ class ModernEntry(tk.Canvas):
         self._font = tkfont.Font(family=font_family, size=font_size)
         self._cursor_height = 18
         self._radius = radius
+        self._text_left = 0           # 当前文本在画布中的 x 偏移（负值表示向左滚）
+        self._max_text_width = None   # 缓存文本最大可显示宽度
 
         self.rect_id = self._draw_rounded_rect(
             1, 1, width - 1, height - 1,
@@ -187,27 +189,27 @@ class ModernEntry(tk.Canvas):
         self.itemconfig(self.text_id, text=self._text or "",
                         fill=self.text_color if self._text else self.placeholder_color)
         self._update_cursor()
+        self._scroll_to_cursor()   # 新增
 
     def _on_click(self, event):
         if self.cursor is None:
             self._create_cursor()
-        click_x = event.x
-        text_width = self._font.measure(self._text)
-        if click_x > self.text_x + text_width:
-            self._cursor_pos = len(self._text)
-        else:
-            self._cursor_pos = 0
-            min_distance = float('inf')
-            for i in range(len(self._text) + 1):
-                substr = self._text[:i]
-                substr_width = self._font.measure(substr)
-                cursor_x = self.text_x + substr_width
-                distance = abs(click_x - cursor_x)
-                if distance < min_distance:
-                    min_distance = distance
-                    self._cursor_pos = i
+        # 把鼠标坐标转换成“文本坐标”
+        click_x_text = event.x - (self.text_x + self._text_left)
+
+        # 二分查找最近的光标插入点
+        self._cursor_pos = 0
+        min_distance = float('inf')
+        for i in range(len(self._text) + 1):
+            substr_width = self._font.measure(self._text[:i])
+            distance = abs(click_x_text - substr_width)
+            if distance < min_distance:
+                min_distance = distance
+                self._cursor_pos = i
         self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
+
         self._update_cursor()
+        self._scroll_to_cursor()   # 让光标可见
         self.focus_set()
 
     def _on_key_press(self, event):
@@ -217,8 +219,8 @@ class ModernEntry(tk.Canvas):
 
         if keysym == "BackSpace":
             if self._cursor_pos > 0:
-                self._text = self._text[:self._cursor_pos - 1] + self._text[self._cursor_pos:]
-                self._cursor_pos -= 1
+                self._text = self._text[:self._cursor_pos-1] + self._text[self._cursor_pos:]
+                self._cursor_pos -= 1 
         elif keysym == "Delete":
             if self._cursor_pos < len(self._text):
                 self._text = self._text[:self._cursor_pos] + self._text[self._cursor_pos + 1:]
@@ -238,6 +240,7 @@ class ModernEntry(tk.Canvas):
 
         self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
         self._refresh_text_and_cursor()
+        self._scroll_to_cursor()
 
     def _on_focus_in(self, event=None):
         if self.cursor is None:
@@ -259,6 +262,9 @@ class ModernEntry(tk.Canvas):
         self.itemconfig(self.rect_id, outline=self.border_normal)
         if not self._text:
             self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
+        self._text_left = 0
+        self.coords(self.text_id, self.text_x, self.text_y)
+        self._update_cursor()
 
     def _on_tab(self, event):
         """event.widget.tk_focusNext().focus()
@@ -280,7 +286,7 @@ class ModernEntry(tk.Canvas):
 
     def _update_cursor(self):
         substr = self._text[:self._cursor_pos]
-        cursor_x = self.text_x + self._font.measure(substr)
+        cursor_x = self.text_x + self._font.measure(substr) + self._text_left
         cursor_y = self.text_y + self.cursor_y_offset
         if self.cursor:
             self.cursor.move(cursor_x, cursor_y)
@@ -312,22 +318,54 @@ class ModernEntry(tk.Canvas):
             points.extend([cx + radius * math.cos(angle), cy + radius * math.sin(angle)])
         return points
 
-    def _on_resize(self, event):
-        try:
-            new_width = max(100, event.width - 100)
-            self.config(width=new_width)
-            self.delete(self.rect_id)
-            self.rect_id = self._draw_rounded_rect(
-                1, 1, new_width - 1, self.winfo_height() - 1,
-                fill=self.bg_color,
-                outline=self.border_focus if ModernEntry._active_cursor == self else self.border_normal,
-                radius=self._radius)
-            font_height = self._font.metrics("linespace")
-            self.text_y = (self.winfo_height() - font_height) // 2
+    def _scroll_to_cursor(self):
+        """保证光标始终可见，且精确落在两字符之间"""
+        # 无文本时归零
+        if not self._text:
+            self._text_left = 0
             self.coords(self.text_id, self.text_x, self.text_y)
             self._update_cursor()
-        except tk.TclError:
-            pass
+            return
+
+        # 光标宽度（像素）
+        cursor_w = self.cursor.width
+
+        # 光标左/右边界（相对于文本起始点）
+        cursor_left = self._font.measure(self._text[:self._cursor_pos])
+        cursor_right = cursor_left + cursor_w
+
+        # 可视窗口
+        visible_w = self.winfo_width() - 2 * self.text_x
+
+        # 需要向左滚
+        if cursor_left < -self._text_left:
+            self._text_left = -cursor_left
+        # 需要向右滚
+        elif cursor_right > -self._text_left + visible_w:
+            self._text_left = -(cursor_right - visible_w)
+
+        # 应用
+        self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
+        self._update_cursor()
+
+    def _on_resize(self, event):
+            """窗口大小改变时重新滚动"""
+            try:
+                new_width = max(100, event.width - 100)
+                self.config(width=new_width)
+                self.delete(self.rect_id)
+                self.rect_id = self._draw_rounded_rect(
+                    1, 1, new_width - 1, self.winfo_height() - 1,
+                    fill=self.bg_color,
+                    outline=self.border_focus if ModernEntry._active_cursor == self else self.border_normal,
+                    radius=self._radius)
+                font_height = self._font.metrics("linespace")
+                self.text_y = (self.winfo_height() - font_height) // 2
+                self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
+                self._update_cursor()
+                self._scroll_to_cursor()
+            except tk.TclError:
+                pass
 
 # ---------- DemoApp ----------
 class DemoApp:
