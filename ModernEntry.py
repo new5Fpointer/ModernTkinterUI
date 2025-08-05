@@ -238,13 +238,28 @@ class ModernEntry(tk.Canvas):
             self._create_cursor()
         keysym = event.keysym
 
+        def _keep_cursor_fixed():
+            """保持光标在窗口中的像素位置不变"""
+            old_cursor_x = self.text_x + self._font.measure(self._text[:self._cursor_pos]) + self._text_left
+            new_cursor_x = self.text_x + self._font.measure(self._text[:self._cursor_pos]) + self._text_left
+            delta = new_cursor_x - old_cursor_x
+            self._text_left -= delta
+
+            max_left = 0
+            min_left = min(0, self.winfo_width() - 2 * self.text_x - self._font.measure(self._text))
+            self._text_left = max(min_left, min(max_left, self._text_left))
+
         if keysym == "BackSpace":
             if self._cursor_pos > 0:
                 self._text = self._text[:self._cursor_pos-1] + self._text[self._cursor_pos:]
-                self._cursor_pos -= 1 
+                self._cursor_pos -= 1
+                _keep_cursor_fixed()
+
         elif keysym == "Delete":
             if self._cursor_pos < len(self._text):
                 self._text = self._text[:self._cursor_pos] + self._text[self._cursor_pos + 1:]
+                _keep_cursor_fixed()
+
         elif keysym == "Left":
             self._cursor_pos = max(0, self._cursor_pos - 1)
         elif keysym == "Right":
@@ -259,7 +274,6 @@ class ModernEntry(tk.Canvas):
         else:
             return
 
-        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
         self._refresh_text_and_cursor()
         self._scroll_to_cursor()
 
@@ -284,6 +298,13 @@ class ModernEntry(tk.Canvas):
                 self.cursor.stop_blinking()
                 self.cursor.hide()
             ModernEntry._active_cursor = None
+
+        # ✅ 新增：失去焦点时重置光标位置到开头
+        self._cursor_pos = 0
+        self._text_left = 0
+        self.coords(self.text_id, self.text_x, self.text_y)
+        self._update_cursor()
+
         self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=False)
 
     def _on_tab(self, event):
@@ -348,13 +369,27 @@ class ModernEntry(tk.Canvas):
 
         font_height = self._font.metrics("linespace")
         self.text_y = (h - font_height) // 2
+
+        # 1. 重新计算最大可显示宽度
+        visible_w = w - 2 * self.text_x
+        text_width = self._font.measure(self._text)
+
+        # 2. 重新计算 _text_left，使光标仍可见且文本尽量靠左
+        if self._text:
+            cursor_x_in_text = self._font.measure(self._text[:self._cursor_pos])
+            # 让光标位于可视区域
+            self._text_left = max(-cursor_x_in_text,
+                                min(0, visible_w - text_width))
+        else:
+            self._text_left = 0
+
+        # 3. 更新文本和光标位置
         self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
 
         if self.cursor is not None:
             cursor_h = max(14, font_height - 4)
             self.cursor.set_height(cursor_h)
             self._update_cursor()
-            self._scroll_to_cursor()
         
     # -------------------------------------------------
     #  统一画圆角矩形（背景 + 边框），并保证不越界
