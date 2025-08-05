@@ -150,7 +150,8 @@ class ModernEntry(tk.Canvas):
                  fixed_size=True, **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bd=0, bg=bg_color)
+                         highlightthickness=0, bd=0, bg=bg_color,
+                         takefocus=True)  # 允许接收焦点
         
         # 基础配置
         self.bg_color = bg_color
@@ -189,49 +190,27 @@ class ModernEntry(tk.Canvas):
         self.bind("<Key>", self._on_key_press)
         self.bind("<BackSpace>", self._on_key_press)
         self.bind("<Delete>", self._on_key_press)
-        self.bind("<FocusIn>", self._on_focus_in)
-        self.bind("<FocusOut>", self._on_focus_out)
-        self.bind("<Tab>", self._on_tab)
+        
+        # 使Canvas可以获得键盘焦点
+        self.focus_set()
         
         if fixed_size:
             self.bind("<Configure>", lambda e: "break")
         else:
             self.bind("<Configure>", self._on_resize)
 
-        # 设置第一个Entry和全局Tab绑定
+        # 设置第一个Entry
         if ModernEntry._first_entry is None:
             ModernEntry._first_entry = self
         self._bind_root_tab()
         self.tag_raise(self.text_id)
         
     def _bind_root_tab(self):
-        """绑定全局Tab键处理 - 只绑定一次"""
-        if ModernEntry._tab_bound:
-            return
-            
-        root = self._root()
-        if root is None:
-            return
-            
-        ModernEntry._tab_bound = True
-
-        def _global_tab(event):
-            focus = event.widget.focus_get()
-            # 如果焦点已经是 ModernEntry，让其自己处理
-            if isinstance(focus, ModernEntry):
-                return None
-            # 否则把焦点给第一个存在的 ModernEntry
-            if (ModernEntry._first_entry and 
-                not ModernEntry._first_entry._destroyed and
-                ModernEntry._first_entry.winfo_exists()):
-                ModernEntry._first_entry.focus_set()
-                return "break"
-            return None
-
-        try:
-            root.bind_all("<Tab>", _global_tab, add="+")
-        except tk.TclError:
-            pass
+        """设置焦点支持"""
+        # 让Canvas可以接收焦点
+        self.focus_set()
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
 
     def _fix_index(self, idx):
         """修正索引值"""
