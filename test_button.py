@@ -7,7 +7,7 @@ class TestApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("RoundedButton 测试")
-        self.geometry("360x220")
+        self.geometry("360x280")
         self.configure(bg="#1e1e1e")
         self.resizable(False, False)
 
@@ -73,6 +73,21 @@ class TestApp(tk.Tk):
             press_color="#7c281f"
         )
         self.btn_exit.pack(side="bottom", pady=10)
+
+        # 6. 禁用/启用演示
+        self.chk_state = tk.BooleanVar(value=True)
+
+        tk.Checkbutton(
+            self,
+            text="启用按钮",
+            variable=self.chk_state,
+            command=lambda: self.btn_hello.configure(
+                state="normal" if self.chk_state.get() else "disabled"
+            ),
+            bg="#1e1e1e",
+            fg="#e0e0e0",
+            selectcolor="#252525"
+        ).pack(pady=5)
 
     # 回调函数
     def on_hello(self):

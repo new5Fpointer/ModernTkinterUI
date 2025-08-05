@@ -17,6 +17,11 @@ class RoundedButton(tk.Canvas):
         # 保存原始尺寸
         self.width = width
         self.height = height
+
+        # 禁用配置
+        self.enabled = True           # 当前是否可用
+        self.disabled_color = "#353535"   # 禁用时的面板色
+        self.disabled_text_color = "#808080"  # 禁用时的文字色
         
         # 颜色配置
         self.button_color = button_color
@@ -24,6 +29,7 @@ class RoundedButton(tk.Canvas):
         self.press_color = press_color
         self.text_color = text_color
         self.outline_color = outline_color
+        self._current_fill = self.button_color
         
         # 字体处理
         if font_family == "default":
@@ -56,6 +62,8 @@ class RoundedButton(tk.Canvas):
     
     def _on_enter(self, event=None):
         """鼠标悬停效果"""
+        if not self.enabled:
+            return
         try:
             self.itemconfig(self.btn_id, fill=self.hover_color)
         except tk.TclError:
@@ -64,12 +72,14 @@ class RoundedButton(tk.Canvas):
     def _on_leave(self, event=None):
         """鼠标离开效果"""
         try:
-            self.itemconfig(self.btn_id, fill=self.button_color)
+            self._refresh_appearance() 
         except tk.TclError:
             pass
     
     def _on_press(self, event=None):
         """鼠标按下效果"""
+        if not self.enabled:
+            return
         try:
             self.itemconfig(self.btn_id, fill=self.press_color)
         except tk.TclError:
@@ -77,6 +87,8 @@ class RoundedButton(tk.Canvas):
     
     def _on_release(self, event=None):
         """鼠标释放并执行命令"""
+        if not self.enabled:
+            return
         try:
             self.itemconfig(self.btn_id, fill=self.hover_color)
             if self.command:
@@ -115,60 +127,88 @@ class RoundedButton(tk.Canvas):
         return points
 
     def configure(self, **kwargs):
-        """配置按钮属性"""
+        """配置按钮属性（含 state / disabled_color）"""
         try:
-            # 处理文本配置
+            # 1. 文本
             if 'text' in kwargs:
                 self.itemconfig(self.text_id, text=kwargs['text'])
-                
-            # 处理命令配置
+
+            # 2. 命令
             if 'command' in kwargs:
                 self.command = kwargs['command']
-            
-            # 处理字体配置
+
+            # 3. 字体
             font_changed = False
-            if 'font_family' in kwargs or 'font_size' in kwargs or 'font_weight' in kwargs:
+            if any(k in kwargs for k in ('font_family', 'font_size', 'font_weight')):
                 family, size, weight = self.font_config
-                if 'font_family' in kwargs:
-                    family = kwargs['font_family']
-                if 'font_size' in kwargs:
-                    size = kwargs['font_size']
-                if 'font_weight' in kwargs:
-                    weight = kwargs['font_weight']
+                family = kwargs.pop('font_family', family)
+                size   = kwargs.pop('font_size',   size)
+                weight = kwargs.pop('font_weight', weight)
                 self.font_config = (family, size, weight)
                 self.itemconfig(self.text_id, font=self.font_config)
-                font_changed = True
-            
-            # 处理颜色配置
+
+            # 4. 禁用色
+            if 'disabled_color' in kwargs:
+                self.disabled_color = kwargs.pop('disabled_color')
+                self._refresh_appearance()
+            if 'disabled_text_color' in kwargs:
+                self.disabled_text_color = kwargs.pop('disabled_text_color')
+                self._refresh_appearance()
+
+            # 5. 状态
+            if 'state' in kwargs:
+                state = kwargs.pop('state')
+                self.set_enabled(state == 'normal')
+
+            # 6. 其余颜色（button_color / hover_color / outline_color / text_color）
             color_changed = False
             color_keys = ['button_color', 'hover_color', 'press_color', 'text_color', 'outline_color']
             for key in color_keys:
                 if key in kwargs:
                     setattr(self, key, kwargs[key])
                     color_changed = True
-            
-            # 如果文本颜色改变，立即更新
-            if 'text_color' in kwargs:
-                self.itemconfig(self.text_id, fill=self.text_color)
-            
-            # 如果按钮或边框颜色改变，重绘按钮背景
-            if color_changed and ('button_color' in kwargs or 'outline_color' in kwargs):
+
+            if color_changed:
+                # 如果当前禁用，仍保持 disabled_color；否则用新 button_color
+                current_fill = (self.disabled_color if not self.enabled
+                                else self.button_color)
                 self.delete(self.btn_id)
                 self.btn_id = self._draw_rounded_rect(
                     1, 1, self.width-1, self.height-1,
-                    fill=self.button_color,
+                    fill=current_fill,
                     outline=self.outline_color
                 )
-                # 确保文字在最上层
+                if 'text_color' in kwargs:
+                    self.itemconfig(self.text_id, fill=self.text_color)
                 self.tag_raise(self.text_id)
-                
+
         except tk.TclError:
-            # 处理窗口已销毁的情况
-            pass
+            pass   # 窗口已销毁
     
     def destroy(self):
         """清理资源"""
         try:
             super().destroy()
+        except tk.TclError:
+            pass
+    
+    def set_enabled(self, flag=True):
+        """True=启用 False=禁用"""
+        self.enabled = bool(flag)
+        self._refresh_appearance()
+
+
+    def _refresh_appearance(self):
+        """刷新按钮和文字的颜色"""
+        if self.enabled:
+            fill_color      = self.button_color
+            text_fill_color = self.text_color
+        else:
+            fill_color      = self.disabled_color
+            text_fill_color = self.disabled_text_color
+
+        try:
+            self.itemconfig(self.btn_id,  fill=fill_color)
+            self.itemconfig(self.text_id, fill=text_fill_color)
         except tk.TclError:
             pass
