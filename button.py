@@ -1,4 +1,4 @@
-# button.py
+# button.py - 修复版本
 import tkinter as tk
 import math
 import tkinter.font as tkfont
@@ -14,6 +14,10 @@ class RoundedButton(tk.Canvas):
         self.command = command
         self.radius = radius
         
+        # 保存原始尺寸
+        self.width = width
+        self.height = height
+        
         # 颜色配置
         self.button_color = button_color
         self.hover_color = hover_color
@@ -27,6 +31,8 @@ class RoundedButton(tk.Canvas):
             default_font = tkfont.nametofont("TkDefaultFont")
             font_family = default_font.actual()["family"]
         
+        self.font_config = (font_family, font_size, font_weight)
+        
         # 绘制圆角按钮
         self.btn_id = self._draw_rounded_rect(
             1, 1, width-1, height-1, 
@@ -34,12 +40,12 @@ class RoundedButton(tk.Canvas):
             outline=self.outline_color
         )
         
-        # 添加按钮文字
-        self.create_text(
+        # 添加按钮文字 - 保存文字ID
+        self.text_id = self.create_text(
             width//2, height//2,
             text=text,
             fill=self.text_color,
-            font=(font_family, font_size, font_weight)
+            font=self.font_config
         )
         
         # 事件绑定
@@ -50,21 +56,33 @@ class RoundedButton(tk.Canvas):
     
     def _on_enter(self, event=None):
         """鼠标悬停效果"""
-        self.itemconfig(self.btn_id, fill=self.hover_color)
+        try:
+            self.itemconfig(self.btn_id, fill=self.hover_color)
+        except tk.TclError:
+            pass
     
     def _on_leave(self, event=None):
         """鼠标离开效果"""
-        self.itemconfig(self.btn_id, fill=self.button_color)
+        try:
+            self.itemconfig(self.btn_id, fill=self.button_color)
+        except tk.TclError:
+            pass
     
     def _on_press(self, event=None):
         """鼠标按下效果"""
-        self.itemconfig(self.btn_id, fill=self.press_color)
+        try:
+            self.itemconfig(self.btn_id, fill=self.press_color)
+        except tk.TclError:
+            pass
     
     def _on_release(self, event=None):
         """鼠标释放并执行命令"""
-        self.itemconfig(self.btn_id, fill=self.hover_color)
-        if self.command:
-            self.command()
+        try:
+            self.itemconfig(self.btn_id, fill=self.hover_color)
+            if self.command:
+                self.command()
+        except tk.TclError:
+            pass
     
     def _draw_rounded_rect(self, x1, y1, x2, y2, **kwargs):
         """绘制圆角矩形"""
@@ -98,25 +116,59 @@ class RoundedButton(tk.Canvas):
 
     def configure(self, **kwargs):
         """配置按钮属性"""
-        if 'text' in kwargs:
-            self.itemconfig(2, text=kwargs['text'])
-        if 'command' in kwargs:
-            self.command = kwargs['command']
-        
-        # 颜色配置
-        color_changed = False
-        color_keys = ['button_color', 'hover_color', 'press_color', 'text_color', 'outline_color']
-        for key in color_keys:
-            if key in kwargs:
-                setattr(self, key, kwargs[key])
-                color_changed = True
-        
-        if color_changed:
-            coords = self.coords(self.btn_id)
-            self.delete(self.btn_id)
-            self.btn_id = self._draw_rounded_rect(
-                coords[0], coords[1], coords[-2], coords[-1],
-                fill=self.button_color,
-                outline=self.outline_color
-            )
-            self.tag_lower(self.btn_id)
+        try:
+            # 处理文本配置
+            if 'text' in kwargs:
+                self.itemconfig(self.text_id, text=kwargs['text'])
+                
+            # 处理命令配置
+            if 'command' in kwargs:
+                self.command = kwargs['command']
+            
+            # 处理字体配置
+            font_changed = False
+            if 'font_family' in kwargs or 'font_size' in kwargs or 'font_weight' in kwargs:
+                family, size, weight = self.font_config
+                if 'font_family' in kwargs:
+                    family = kwargs['font_family']
+                if 'font_size' in kwargs:
+                    size = kwargs['font_size']
+                if 'font_weight' in kwargs:
+                    weight = kwargs['font_weight']
+                self.font_config = (family, size, weight)
+                self.itemconfig(self.text_id, font=self.font_config)
+                font_changed = True
+            
+            # 处理颜色配置
+            color_changed = False
+            color_keys = ['button_color', 'hover_color', 'press_color', 'text_color', 'outline_color']
+            for key in color_keys:
+                if key in kwargs:
+                    setattr(self, key, kwargs[key])
+                    color_changed = True
+            
+            # 如果文本颜色改变，立即更新
+            if 'text_color' in kwargs:
+                self.itemconfig(self.text_id, fill=self.text_color)
+            
+            # 如果按钮或边框颜色改变，重绘按钮背景
+            if color_changed and ('button_color' in kwargs or 'outline_color' in kwargs):
+                self.delete(self.btn_id)
+                self.btn_id = self._draw_rounded_rect(
+                    1, 1, self.width-1, self.height-1,
+                    fill=self.button_color,
+                    outline=self.outline_color
+                )
+                # 确保文字在最上层
+                self.tag_raise(self.text_id)
+                
+        except tk.TclError:
+            # 处理窗口已销毁的情况
+            pass
+    
+    def destroy(self):
+        """清理资源"""
+        try:
+            super().destroy()
+        except tk.TclError:
+            pass

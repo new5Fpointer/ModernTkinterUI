@@ -1,4 +1,4 @@
-# ModernEntry_fixed.py
+# ModernEntry.py - 修复版本
 import tkinter as tk
 import tkinter.font as tkfont
 import math
@@ -16,68 +16,131 @@ class PureCursor:
         self.blink_speed = blink_speed
         self.visible = True
         self.blink_id = None
-        self.cursor_id = canvas.create_rectangle(
-            x, y, x + width, y + height,
-            fill=color, outline="", width=0)
+        self.cursor_id = None
+        self._destroyed = False
+        
+        try:
+            self.cursor_id = canvas.create_rectangle(
+                x, y, x + width, y + height,
+                fill=color, outline="", width=0)
+        except tk.TclError:
+            self._destroyed = True
 
     def move(self, x, y):
+        if self._destroyed or not self.cursor_id:
+            return
+            
         was_visible = self.visible
         if self.blink_id:
-            self.canvas.after_cancel(self.blink_id)
+            try:
+                self.canvas.after_cancel(self.blink_id)
+            except tk.TclError:
+                pass
             self.blink_id = None
+            
         self.x = x
         self.y = y
-        self.canvas.coords(self.cursor_id, x, y, x + self.width, y + self.height)
-        if was_visible:
-            self.canvas.itemconfig(self.cursor_id, fill=self.color)
-        self.start_blinking()
+        
+        try:
+            self.canvas.coords(self.cursor_id, x, y, x + self.width, y + self.height)
+            if was_visible:
+                self.canvas.itemconfig(self.cursor_id, fill=self.color)
+            self.start_blinking()
+        except tk.TclError:
+            self._destroyed = True
 
     def blink(self):
+        if self._destroyed or not self.cursor_id:
+            return
+            
         self.visible = not self.visible
         fill = self.color if self.visible else ""
-        self.canvas.itemconfig(self.cursor_id, fill=fill)
-        self.blink_id = self.canvas.after(self.blink_speed, self.blink)
+        
+        try:
+            self.canvas.itemconfig(self.cursor_id, fill=fill)
+            self.blink_id = self.canvas.after(self.blink_speed, self.blink)
+        except tk.TclError:
+            self._destroyed = True
 
     def start_blinking(self):
+        if self._destroyed or not self.cursor_id:
+            return
+            
         if self.blink_id:
-            self.canvas.after_cancel(self.blink_id)
+            try:
+                self.canvas.after_cancel(self.blink_id)
+            except tk.TclError:
+                pass
+                
         self.visible = True
-        self.canvas.itemconfig(self.cursor_id, fill=self.color)
-        self.blink_id = self.canvas.after(self.blink_speed, self.blink)
+        try:
+            self.canvas.itemconfig(self.cursor_id, fill=self.color)
+            self.blink_id = self.canvas.after(self.blink_speed, self.blink)
+        except tk.TclError:
+            self._destroyed = True
 
     def stop_blinking(self):
         if self.blink_id:
-            self.canvas.after_cancel(self.blink_id)
+            try:
+                self.canvas.after_cancel(self.blink_id)
+            except tk.TclError:
+                pass
             self.blink_id = None
+            
         self.visible = False
-        self.canvas.itemconfig(self.cursor_id, fill="")
+        if not self._destroyed and self.cursor_id:
+            try:
+                self.canvas.itemconfig(self.cursor_id, fill="")
+            except tk.TclError:
+                self._destroyed = True
 
     def set_height(self, height):
+        if self._destroyed or not self.cursor_id:
+            return
+            
         self.height = height
-        self.canvas.coords(self.cursor_id, self.x, self.y, self.x + self.width, self.y + height)
+        try:
+            self.canvas.coords(self.cursor_id, self.x, self.y, self.x + self.width, self.y + height)
+        except tk.TclError:
+            self._destroyed = True
 
     def set_color(self, color):
         self.color = color
-        if self.visible:
-            self.canvas.itemconfig(self.cursor_id, fill=color)
+        if self.visible and not self._destroyed and self.cursor_id:
+            try:
+                self.canvas.itemconfig(self.cursor_id, fill=color)
+            except tk.TclError:
+                self._destroyed = True
 
     def destroy(self):
         self.stop_blinking()
-        try:
-            self.canvas.delete(self.cursor_id)
-        except tk.TclError:
-            pass
+        self._destroyed = True
+        if self.cursor_id:
+            try:
+                self.canvas.delete(self.cursor_id)
+            except tk.TclError:
+                pass
+            self.cursor_id = None
     
     def hide(self):
-        self.canvas.itemconfig(self.cursor_id, state='hidden')
+        if not self._destroyed and self.cursor_id:
+            try:
+                self.canvas.itemconfig(self.cursor_id, state='hidden')
+            except tk.TclError:
+                self._destroyed = True
 
     def show(self):
-        self.canvas.itemconfig(self.cursor_id, state='normal')
+        if not self._destroyed and self.cursor_id:
+            try:
+                self.canvas.itemconfig(self.cursor_id, state='normal')
+            except tk.TclError:
+                self._destroyed = True
 
 # ---------- ModernEntry ----------
 class ModernEntry(tk.Canvas):
     _active_cursor = None
     _first_entry = None
+    _tab_bound = False
 
     def __init__(self, master, width=240, height=36, radius=4,
                  bg_color="#2d2d2d", border_normal="#444444",
@@ -87,7 +150,10 @@ class ModernEntry(tk.Canvas):
                  fixed_size=True, **kwargs):
 
         super().__init__(master, width=width, height=height,
-                         highlightthickness=0, bd=0, bg=bg_color)
+                         highlightthickness=0, bd=0, bg=bg_color,
+                         takefocus=True)  # 允许接收焦点
+        
+        # 基础配置
         self.bg_color = bg_color
         self.border_normal = border_normal
         self.border_focus = border_focus
@@ -99,60 +165,55 @@ class ModernEntry(tk.Canvas):
         self._font = tkfont.Font(family=font_family, size=font_size)
         self._cursor_height = 18
         self._radius = radius
-        self._text_left = 0           # 当前文本在画布中的 x 偏移（负值表示向左滚）
-        self._max_text_width = None   # 缓存文本最大可显示宽度
+        self._text_left = 0
+        self._max_text_width = None
+        self._destroyed = False
 
-        
-
+        # 布局计算
         font_height = self._font.metrics("linespace")
         self.text_x = 12
         self.text_y = (height - font_height) // 2
         self.cursor_y_offset = max(0, (font_height - self._cursor_height) // 2)
 
+        # 光标初始化 - 必须在_redraw_rect之前
+        self.cursor = None
+        
+        # 创建文本和背景
         self.text_id = self.create_text(
             self.text_x, self.text_y,
             text=placeholder, anchor="nw",
             fill=placeholder_color, font=self._font)
-        self._redraw_rect(width, height)  
-
-        self.cursor = None
+        self._redraw_rect(width, height)
+        
+        # 事件绑定
         self.bind("<Button-1>", self._on_click)
         self.bind("<Key>", self._on_key_press)
         self.bind("<BackSpace>", self._on_key_press)
         self.bind("<Delete>", self._on_key_press)
-        self.bind("<FocusIn>", self._on_focus_in)
-        self.bind("<FocusOut>", self._on_focus_out)
-        self.bind("<Tab>", self._on_tab)
+        
+        # 使Canvas可以获得键盘焦点
+        self.focus_set()
+        
         if fixed_size:
             self.bind("<Configure>", lambda e: "break")
         else:
             self.bind("<Configure>", self._on_resize)
 
+        # 设置第一个Entry
         if ModernEntry._first_entry is None:
             ModernEntry._first_entry = self
         self._bind_root_tab()
         self.tag_raise(self.text_id)
         
     def _bind_root_tab(self):
-        root = self._root()
-        if getattr(root, "_modern_tab_bound", None):
-            return
-        root._modern_tab_bound = True
-
-        def _global_tab(event):
-            focus = event.widget.focus_get()
-            # 如果焦点已经是 ModernEntry，让系统自己处理
-            if isinstance(focus, ModernEntry):
-                return None
-            # 否则把焦点给第一个 ModernEntry
-            if ModernEntry._first_entry and ModernEntry._first_entry.winfo_exists():
-                ModernEntry._first_entry.focus_set()
-                return "break"
-            return None
-
-        root.bind_all("<Tab>", _global_tab, add="+")
+        """设置焦点支持"""
+        # 让Canvas可以接收焦点
+        self.focus_set()
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
 
     def _fix_index(self, idx):
+        """修正索引值"""
         if idx in (tk.END, "end"):
             return len(self._text)
         try:
@@ -164,12 +225,18 @@ class ModernEntry(tk.Canvas):
         return max(0, min(idx, len(self._text)))
 
     def insert(self, idx, txt):
+        """插入文本"""
+        if self._destroyed:
+            return
         idx = self._fix_index(idx)
         self._text = self._text[:idx] + txt + self._text[idx:]
         self._cursor_pos = idx + len(txt)
         self._refresh_text_and_cursor()
 
     def delete(self, first, last=None):
+        """删除文本"""
+        if self._destroyed:
+            return
         first = self._fix_index(first)
         if last is None:
             last = first + 1
@@ -182,40 +249,81 @@ class ModernEntry(tk.Canvas):
         self._refresh_text_and_cursor()
 
     def set(self, text):
+        """设置文本内容"""
+        if self._destroyed:
+            return
+            
         self._text = text
         self._cursor_pos = len(text)
         self._text_left = 0
-        self.coords(self.text_id, self.text_x, self.text_y)
+        
+        try:
+            self.coords(self.text_id, self.text_x, self.text_y)
 
-        # 1. 立即显示占位符或文本
-        if text:
-            self.itemconfig(self.text_id, text=text, fill=self.text_color)
-        else:
-            self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
+            # 显示文本或占位符
+            if text:
+                self.itemconfig(self.text_id, text=text, fill=self.text_color)
+            else:
+                self.itemconfig(self.text_id, text=self.placeholder, fill=self.placeholder_color)
 
-        # 2. 光标：不存在就创建并隐藏
-        if self.cursor is None:
-            self._create_cursor()
-            self.cursor.hide()
+            # 确保光标存在但隐藏
+            self._ensure_cursor_exists()
+            if self.cursor:
+                self.cursor.hide()
 
-        # 3. 滚动归零
-        self._scroll_to_cursor()
+            # 滚动归零
+            self._scroll_to_cursor()
+        except tk.TclError:
+            self._destroyed = True
 
     def get(self):
+        """获取文本内容"""
         return self._text
 
+    def _ensure_cursor_exists(self):
+        """确保光标存在"""
+        if self.cursor is None and not self._destroyed:
+            try:
+                self.cursor = PureCursor(
+                    self,
+                    x=self.text_x,
+                    y=self.text_y + self.cursor_y_offset,
+                    height=self._cursor_height,
+                    width=1,
+                    color="#6bd8c9",
+                    blink_speed=450
+                )
+                self.cursor.stop_blinking()
+                self.cursor.hide()
+            except tk.TclError:
+                self._destroyed = True
+
     def _refresh_text_and_cursor(self):
-    # 根据当前 _text 实时决定显示什么
-        show_text   = self._text if self._text else self.placeholder
-        show_color  = self.text_color if self._text else self.placeholder_color
-        self.itemconfig(self.text_id, text=show_text, fill=show_color)
-        self._update_cursor()
-        self._scroll_to_cursor()
+        """刷新文本显示和光标位置"""
+        if self._destroyed:
+            return
+            
+        try:
+            # 根据当前 _text 决定显示什么
+            show_text = self._text if self._text else self.placeholder
+            show_color = self.text_color if self._text else self.placeholder_color
+            self.itemconfig(self.text_id, text=show_text, fill=show_color)
+            
+            self._update_cursor()
+            self._scroll_to_cursor()
+        except tk.TclError:
+            self._destroyed = True
 
     def _on_click(self, event):
-        if self.cursor is None:
-            self._create_cursor()
-        # 把鼠标坐标转换成“文本坐标”
+        """处理鼠标点击"""
+        if self._destroyed:
+            return
+            
+        self._ensure_cursor_exists()
+        if not self.cursor:
+            return
+            
+        # 将鼠标坐标转换为文本坐标
         click_x_text = event.x - (self.text_x + self._text_left)
 
         # 二分查找最近的光标插入点
@@ -227,15 +335,21 @@ class ModernEntry(tk.Canvas):
             if distance < min_distance:
                 min_distance = distance
                 self._cursor_pos = i
-        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
 
+        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
         self._update_cursor()
-        self._scroll_to_cursor()   # 让光标可见
+        self._scroll_to_cursor()
         self.focus_set()
 
     def _on_key_press(self, event):
-        if self.cursor is None:
-            self._create_cursor()
+        """处理按键事件"""
+        if self._destroyed:
+            return
+            
+        self._ensure_cursor_exists()
+        if not self.cursor:
+            return
+            
         keysym = event.keysym
 
         if keysym == "BackSpace":
@@ -264,125 +378,159 @@ class ModernEntry(tk.Canvas):
         self._scroll_to_cursor()
 
     def _on_focus_in(self, event=None):
-        if self.cursor is None:
-            self._create_cursor()
-        if ModernEntry._active_cursor:
-            self.cursor.show() 
-            ModernEntry._active_cursor.cursor.stop_blinking()
+        """获得焦点时的处理"""
+        if self._destroyed:
+            return
+            
+        self._ensure_cursor_exists()
+        
+        # 处理之前的活动光标
+        if ModernEntry._active_cursor and ModernEntry._active_cursor != self:
+            if (ModernEntry._active_cursor.cursor and 
+                not ModernEntry._active_cursor._destroyed):
+                ModernEntry._active_cursor.cursor.stop_blinking()
+                ModernEntry._active_cursor.cursor.hide()
+        
+        # 设置当前为活动光标
         ModernEntry._active_cursor = self
-        self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
-        if self.cursor:
-            self.cursor.start_blinking()
-        if self.cursor is None:
-            self._create_cursor()
-        self.cursor.show()
-        self.cursor.start_blinking()
+        
+        try:
+            self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
+            if self.cursor:
+                self.cursor.show()
+                self.cursor.start_blinking()
+        except tk.TclError:
+            self._destroyed = True
 
     def _on_focus_out(self, event=None):
+        """失去焦点时的处理"""
+        if self._destroyed:
+            return
+            
         if ModernEntry._active_cursor == self:
             if self.cursor:
                 self.cursor.stop_blinking()
                 self.cursor.hide()
             ModernEntry._active_cursor = None
-        self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=False)
+            
+        try:
+            self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=False)
+        except tk.TclError:
+            self._destroyed = True
 
     def _on_tab(self, event):
-        """event.widget.tk_focusNext().focus()
-        return "break"""
-        pass
-
-    def _create_cursor(self):
-        if self.cursor is None:
-            self.cursor = PureCursor(
-                self,
-                x=self.text_x,
-                y=self.text_y + self.cursor_y_offset,
-                height=self._cursor_height,
-                width=1,
-                color="#6bd8c9",
-                blink_speed=450
-            )
-            self.cursor.stop_blinking()
-            self.cursor.hide() 
+        """Tab键处理 - 跳转到下一个可聚焦控件"""
+        try:
+            next_widget = event.widget.tk_focusNext()
+            if next_widget:
+                next_widget.focus()
+            return "break"
+        except tk.TclError:
+            pass
 
     def _update_cursor(self):
+        """更新光标位置"""
+        if self._destroyed or not self.cursor:
+            return
+            
         substr = self._text[:self._cursor_pos]
         cursor_x = self.text_x + self._font.measure(substr) + self._text_left
         cursor_y = self.text_y + self.cursor_y_offset
-        if self.cursor:
-            self.cursor.move(cursor_x, cursor_y)
+        self.cursor.move(cursor_x, cursor_y)
 
     def _scroll_to_cursor(self):
-        """保证光标始终可见，且精确落在两字符之间"""
+        """滚动以保证光标可见"""
+        if self._destroyed:
+            return
+            
         # 无文本时归零
         if not self._text:
             self._text_left = 0
-            self.coords(self.text_id, self.text_x, self.text_y)
-            self._update_cursor()
+            try:
+                self.coords(self.text_id, self.text_x, self.text_y)
+                self._update_cursor()
+            except tk.TclError:
+                self._destroyed = True
             return
 
-        # 光标宽度（像素）
-        cursor_w = self.cursor.width
+        # 光标宽度
+        cursor_w = 1 if not self.cursor else self.cursor.width
 
         # 光标左/右边界（相对于文本起始点）
         cursor_left = self._font.measure(self._text[:self._cursor_pos])
         cursor_right = cursor_left + cursor_w
 
-        # 可视窗口
-        visible_w = self.winfo_width() - 2 * self.text_x
+        # 可视窗口宽度
+        try:
+            visible_w = self.winfo_width() - 2 * self.text_x
+        except tk.TclError:
+            self._destroyed = True
+            return
 
-        # 需要向左滚
+        # 计算滚动偏移
         if cursor_left < -self._text_left:
             self._text_left = -cursor_left
-        # 需要向右滚
         elif cursor_right > -self._text_left + visible_w:
             self._text_left = -(cursor_right - visible_w)
 
-        # 应用
-        self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
-        self._update_cursor()
+        # 应用滚动
+        try:
+            self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
+            self._update_cursor()
+        except tk.TclError:
+            self._destroyed = True
 
     def _on_resize(self, event):
+        """处理尺寸变化"""
+        if self._destroyed:
+            return
+            
         w, h = event.width, event.height
-        self._redraw_rect(w, h, focus=(self.focus_get() == self))
-
-        font_height = self._font.metrics("linespace")
-        self.text_y = (h - font_height) // 2
-        self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
-
-        if self.cursor is not None:
-            cursor_h = max(14, font_height - 4)
-            self.cursor.set_height(cursor_h)
-            self._update_cursor()
-            self._scroll_to_cursor()
         
-    # -------------------------------------------------
-    #  统一画圆角矩形（背景 + 边框），并保证不越界
-    # -------------------------------------------------
+        try:
+            self._redraw_rect(w, h, focus=(self.focus_get() == self))
+
+            font_height = self._font.metrics("linespace")
+            self.text_y = (h - font_height) // 2
+            self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
+
+            if self.cursor is not None:
+                cursor_h = max(14, font_height - 4)
+                self.cursor.set_height(cursor_h)
+                self._update_cursor()
+                self._scroll_to_cursor()
+        except tk.TclError:
+            self._destroyed = True
+        
     def _redraw_rect(self, w, h, focus=False):
-        if hasattr(self, '_rect_bg'):
-            self.delete(self._rect_bg)
-        if hasattr(self, '_rect_outline'):
-            self.delete(self._rect_outline)
+        """重绘背景矩形"""
+        if self._destroyed:
+            return
+            
+        try:
+            if hasattr(self, '_rect_bg'):
+                self.delete(self._rect_bg)
+            if hasattr(self, '_rect_outline'):
+                self.delete(self._rect_outline)
 
-        r = min(h // 2, self._radius)
-        x1, y1, x2, y2 = 0, 0, w - 1, h - 1
-        pts = self._rounded_rect_pts(x1, y1, x2, y2, r)
+            r = min(h // 2, self._radius)
+            x1, y1, x2, y2 = 0, 0, w - 1, h - 1
+            pts = self._rounded_rect_pts(x1, y1, x2, y2, r)
 
-        self._rect_bg = self.create_polygon(
-            pts, fill=self.bg_color, outline="", smooth=True)
-        self._rect_outline = self.create_polygon(
-            pts, fill="", outline=self.border_focus if focus else self.border_normal,
-            smooth=True, width=1)
+            self._rect_bg = self.create_polygon(
+                pts, fill=self.bg_color, outline="", smooth=True)
+            self._rect_outline = self.create_polygon(
+                pts, fill="", outline=self.border_focus if focus else self.border_normal,
+                smooth=True, width=1)
 
-        self.tag_raise(self.text_id)
-        if getattr(self, 'cursor', None):  # ✅ 安全判断
-            self.tag_raise(self.cursor.cursor_id)
+            self.tag_raise(self.text_id)
+            if self.cursor and self.cursor.cursor_id:
+                self.tag_raise(self.cursor.cursor_id)
+        except tk.TclError:
+            self._destroyed = True
 
-    # -------------------------------------------------
-    #  圆角矩形坐标（顺时针，12 个点）
-    # -------------------------------------------------
     def _rounded_rect_pts(self, x1, y1, x2, y2, r):
+        """生成圆角矩形坐标点"""
         return [
             x1+r, y1,              # 起点
             x2-r, y1,
@@ -398,11 +546,31 @@ class ModernEntry(tk.Canvas):
             x1,   y1
         ]
     
+    def destroy(self):
+        """清理资源"""
+        self._destroyed = True
+        
+        # 清理光标
+        if self.cursor:
+            self.cursor.destroy()
+            self.cursor = None
+            
+        # 清理类变量引用
+        if ModernEntry._active_cursor == self:
+            ModernEntry._active_cursor = None
+        if ModernEntry._first_entry == self:
+            ModernEntry._first_entry = None
+            
+        try:
+            super().destroy()
+        except tk.TclError:
+            pass
+    
 # ---------- DemoApp ----------
 class DemoApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Modern Entry Demo")
+        self.root.title("Modern Entry Demo - Fixed Version")
         self.root.geometry("420x380")
         self.root.configure(bg="#1e1e1e")
 
@@ -413,10 +581,10 @@ class DemoApp:
         header_frame.pack(fill="x", pady=(0, 15))
 
         tk.Label(
-            header_frame, text="Modern Entry", font=("Segoe UI", 16, "bold"),
+            header_frame, text="Modern Entry - Fixed", font=("Segoe UI", 16, "bold"),
             fg="#4ec9b0", bg="#1e1e1e").pack(side="left")
         tk.Label(
-            header_frame, text="Smooth cursor animation", font=("Segoe UI", 10),
+            header_frame, text="All bugs fixed!", font=("Segoe UI", 10),
             fg="#888888", bg="#1e1e1e").pack(side="left", padx=(10, 0))
 
         form_frame = tk.Frame(container, bg="#1e1e1e")
@@ -442,8 +610,9 @@ class DemoApp:
             activeforeground="#ffffff", relief="flat", padx=20, pady=6,
             command=self.clear_form)
         clear_btn.pack(side="right")
-        container.columnconfigure(0, weight=1)   # 如果有多列
-        container.rowconfigure(2, weight=1)      # form_frame 所在行
+        
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(2, weight=1)
         form_frame.columnconfigure(1, weight=1)
 
     def _create_labeled_entry(self, parent, label_text, placeholder, row):
@@ -454,7 +623,7 @@ class DemoApp:
 
         entry = ModernEntry(
             parent, width=260, height=36, placeholder=placeholder,
-            font_family="Segoe UI", font_size=12,fixed_size=False)
+            font_family="Segoe UI", font_size=12, fixed_size=False)
         entry.grid(row=row, column=1, padx=(0, 10), pady=8, sticky="nsew")
         setattr(self, f"entry_{row}", entry)
         parent.columnconfigure(1, weight=1)
