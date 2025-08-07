@@ -6,7 +6,7 @@ import tkinter.font as tkfont
 # 尺寸常量
 DEFAULT_WIDTH = 240
 DEFAULT_HEIGHT = 36
-DEFAULT_RADIUS = 24
+DEFAULT_RADIUS = 8
 DEFAULT_CURSOR_HEIGHT = 18
 DEFAULT_CURSOR_BLINK_SPEED = 450
 TEXT_PADDING_X = 12
@@ -162,6 +162,8 @@ class ModernEntry(tk.Canvas):
         self._radius = radius
         self._text_left = 0           # 文本水平偏移量（用于滚动）
         self.fixed_size = fixed_size  # 是否固定尺寸
+        self._original_border_focus = border_focus
+        self._current_border_focus  = border_focus
         
         # 添加最大长度限制
         if max_length is not None and max_length < 1:
@@ -319,7 +321,18 @@ class ModernEntry(tk.Canvas):
         show_color = self.text_color if self._text else self.placeholder_color
         self.itemconfig(self.text_id, text=show_text, fill=show_color)
         
-        # 更新光标位置和滚动
+        if self.max_length is not None and len(self._text) >= self.max_length:
+            new_color = "#ff4d4d"          # 红色
+        else:
+            new_color = self._original_border_focus
+
+        if new_color != self._current_border_focus:
+            self._current_border_focus = new_color
+            # 如果当前正是焦点状态，马上重绘
+            if self is self.focus_displayof():
+                self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
+
+        # 4. 光标与滚动
         self._update_cursor()
         self._scroll_to_cursor()
 
@@ -614,32 +627,24 @@ class ModernEntry(tk.Canvas):
         self._scroll_to_cursor()
 
     def _redraw_rect(self, w, h, focus=False):
-        """重绘圆角矩形背景和边框"""
-        # 删除旧的背景和边框
-        if hasattr(self, '_rect_bg'):
-            try:
-                self.delete(self._rect_bg)
-            except:
-                pass
-        if hasattr(self, '_rect_outline'):
-            try:
-                self.delete(self._rect_outline)
-            except:
-                pass
+        """重绘圆角矩形背景和边框（只改颜色，不重建对象）"""
+        if hasattr(self, '_rect_outline') and self._rect_outline:
+            color = self._current_border_focus if focus else self.border_normal
+            self.itemconfig(self._rect_outline, outline=color)
+            return
 
-        # 计算圆角半径
+        # 第一次创建
         r = min(h // 2, self._radius)
         x1, y1, x2, y2 = 0, 0, w - 1, h - 1
-        
-        # 创建圆角矩形
         pts = self._rounded_rect_pts(x1, y1, x2, y2, r)
+
         self._rect_bg = self.create_polygon(
             pts, fill=self.bg_color, outline="", smooth=True)
         self._rect_outline = self.create_polygon(
             pts, fill="", outline=self.border_focus if focus else self.border_normal,
             smooth=True, width=1)
 
-        # 确保文本和光标在最上层
+        # 保证文本和光标始终在最上层
         self.tag_raise(self.text_id)
         if getattr(self, 'cursor', None) and self.cursor:
             self.tag_raise(self.cursor.cursor_id)
