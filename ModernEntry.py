@@ -30,6 +30,7 @@ BUTTON_SECONDARY_BG = "#444444"
 BUTTON_SECONDARY_FG = "#cccccc"
 BUTTON_SECONDARY_ACTIVE_BG = "#555555"
 SUCCESS_COLOR = "#4ec9b0"
+SELECTION_COLOR = "#3da89b"  # 选择区域颜色（略暗于光标颜色）
 
 # 字体常量
 ENTRY_FONT_FAMILY = "Segoe UI"
@@ -188,6 +189,12 @@ class ModernEntry(tk.Canvas):
         # 初始化光标
         self.cursor = None
         
+        # 选择相关变量
+        self._select_start = None     # 选择开始位置
+        self._dragging_select = False # 是否正在拖动选择
+        self._selection_rect = None   # 选择区域矩形ID
+        self._selection_rects = []    # 选择区域矩形列表（用于多段选择）
+        
         # 绑定事件处理
         self._bind_events()
         
@@ -209,10 +216,16 @@ class ModernEntry(tk.Canvas):
         self.bind("<FocusIn>", self._on_focus_in)
         self.bind("<FocusOut>", self._on_focus_out)
         self.bind("<Tab>", self._on_tab)
+        self.bind("<B1-Motion>", self._on_drag)  # 鼠标拖动选择
+        self.bind("<ButtonRelease-1>", self._on_release)  # 鼠标释放
         
         # 添加粘贴支持
         self.bind("<Control-v>", self._on_paste)
         self.bind("<Control-V>", self._on_paste)  # 处理大写V的情况
+        self.bind("<Control-c>", self._on_copy)   # 添加复制支持
+        self.bind("<Control-C>", self._on_copy)   # 添加复制支持
+        self.bind("<Control-a>", self._select_all) # 添加全选支持
+        self.bind("<Control-A>", self._select_all) # 添加全选支持
         
         # 固定尺寸处理
         if self.fixed_size:
@@ -253,6 +266,15 @@ class ModernEntry(tk.Canvas):
         if idx < 0:
             idx = max(0, len(self._text) + idx)
         return max(0, min(idx, len(self._text)))
+    
+    def _normalize_selection(self):
+        """确保选择开始和结束位置是有效的"""
+        if self._select_start is None:
+            return None, None
+        
+        start = min(self._select_start, self._cursor_pos)
+        end = max(self._select_start, self._cursor_pos)
+        return start, end
 
     def insert(self, idx, txt):
         """在指定位置插入文本"""
@@ -274,9 +296,31 @@ class ModernEntry(tk.Canvas):
         self._text = self._text[:idx] + txt + self._text[idx:]
         self._cursor_pos = idx + len(txt)
         self._refresh_text_and_cursor()
+        
+        # 插入文本后清除选择
+        self._select_start = None
+        self._clear_selection()
 
-    def delete(self, first, last=None):
-        """删除指定范围内的文本"""
+    def delete(self, first, last=None, internal=False):
+        """删除指定范围内的文本
+        参数:
+            first: 删除起始位置
+            last: 删除结束位置（可选）
+            internal: 是否为内部调用（如清除选择区域），防止递归
+        """
+        if internal:
+            return  # 防止递归调用
+
+        # 如果有选择区域，则删除选择区域
+        start, end = self._normalize_selection()
+        if start is not None and end is not None:
+            self._text = self._text[:start] + self._text[end:]
+            self._cursor_pos = start
+            self._select_start = None
+            self._clear_selection(internal=True)  # 标记为内部调用
+            self._refresh_text_and_cursor()
+            return
+
         first = self._fix_index(first)
         last = first + 1 if last is None else self._fix_index(last)
         if first > last:
@@ -284,6 +328,10 @@ class ModernEntry(tk.Canvas):
         self._text = self._text[:first] + self._text[last:]
         self._cursor_pos = first
         self._refresh_text_and_cursor()
+
+        # 删除文本后清除选择
+        self._select_start = None
+        self._clear_selection(internal=True)
 
     def set(self, text):
         """设置输入框的文本内容"""
@@ -309,10 +357,21 @@ class ModernEntry(tk.Canvas):
 
         # 滚动到光标位置
         self._scroll_to_cursor()
+        
+        # 清除选择
+        self._select_start = None
+        self._clear_selection()
 
     def get(self):
         """获取输入框的文本内容"""
         return self._text
+    
+    def get_selected_text(self):
+        """获取选中的文本"""
+        start, end = self._normalize_selection()
+        if start is None or end is None or start == end:
+            return ""
+        return self._text[start:end]
 
     def _refresh_text_and_cursor(self):
         """刷新文本显示和光标位置"""
@@ -335,6 +394,50 @@ class ModernEntry(tk.Canvas):
         # 4. 光标与滚动
         self._update_cursor()
         self._scroll_to_cursor()
+        self._update_selection_visual()
+
+    # ====================== 选择区域相关方法 ======================
+    def _clear_selection(self, internal=False):
+        """清除选择区域"""
+        for rect in self._selection_rects:
+            self.delete(rect, internal=True)  # 防止递归
+        self._selection_rects = []
+        self._selection_rect = None
+    
+    def _update_selection_visual(self):
+        """更新选择区域的视觉显示"""
+        # 先清除之前的选择区域
+        self._clear_selection()
+        
+        # 如果没有选择开始位置或选择范围无效
+        if self._select_start is None or self._select_start == self._cursor_pos:
+            return
+        
+        # 计算选择范围的开始和结束位置
+        start = min(self._select_start, self._cursor_pos)
+        end = max(self._select_start, self._cursor_pos)
+        
+        # 计算选择区域的坐标
+        start_x = self._font.measure(self._text[:start]) + self.text_x + self._text_left
+        end_x = self._font.measure(self._text[:end]) + self.text_x + self._text_left
+        
+        # 计算文本高度
+        font_height = self._font.metrics("linespace")
+        y1 = self.text_y
+        y2 = y1 + font_height
+        
+        # 创建选择区域矩形
+        self._selection_rect = self.create_rectangle(
+            start_x, y1, end_x, y2,
+            fill=SELECTION_COLOR, outline="", width=0
+        )
+        self._selection_rects.append(self._selection_rect)
+        
+        # 确保选择区域在文本下方但在背景上方
+        self.tag_lower(self._selection_rect, self.text_id)
+        self.tag_raise(self.text_id)
+        if self.cursor:
+            self.tag_raise(self.cursor.cursor_id)
 
     # ====================== 光标操作相关方法 ======================
     def _create_cursor(self):
@@ -365,30 +468,42 @@ class ModernEntry(tk.Canvas):
 
     # ====================== 事件处理相关方法 ======================
     def _on_click(self, event):
-        """鼠标点击事件处理"""
+        """鼠标点击事件处理（优化版）"""
         if self.cursor is None:
             self._create_cursor()
 
-        # 计算点击位置对应的字符索引
-        click_x_text = event.x - (self.text_x + self._text_left)
-        self._cursor_pos = 0
-        min_distance = float('inf')
+        # 使用新方法计算字符索引
+        click_pos = self._get_char_index_at_x(event.x)
         
-        # 找到距离点击位置最近的字符索引
-        for i in range(len(self._text) + 1):
-            substr_width = self._font.measure(self._text[:i])
-            distance = abs(click_x_text - substr_width)
-            if distance < min_distance:
-                min_distance = distance
-                self._cursor_pos = i
-
-        # 确保索引在有效范围内
-        self._cursor_pos = max(0, min(self._cursor_pos, len(self._text)))
+        # 设置光标位置和选择起点
+        self._cursor_pos = click_pos
+        self._select_start = click_pos
+        self._dragging_select = True
         
-        # 更新光标并获取焦点
+        # 更新显示
         self._update_cursor()
         self._scroll_to_cursor()
         self.focus_set()
+        self._update_selection_visual()
+    
+    def _on_drag(self, event):
+        """鼠标拖动事件处理"""
+        if not self._dragging_select:
+            return
+            
+        # 使用新方法计算字符索引
+        new_pos = self._get_char_index_at_x(event.x)
+        
+        # 更新光标位置
+        if new_pos != self._cursor_pos:
+            self._cursor_pos = new_pos
+            self._update_cursor()
+            self._scroll_to_cursor()
+            self._update_selection_visual()
+    
+    def _on_release(self, event):
+        """鼠标释放事件处理"""
+        self._dragging_select = False
 
     def _on_key_press(self, event):
         """键盘按键事件处理"""
@@ -398,6 +513,7 @@ class ModernEntry(tk.Canvas):
         # 是否是首次按键（用于滚动处理）
         first_key_after_focus_in = (self._cursor_pos == 0 and self._text_left == 0)
         keysym = event.keysym
+        shift_pressed = (event.state & 0x0001) != 0  # 检查Shift键是否按下
 
         def _keep_cursor_fixed():
             """保持光标在窗口中的位置不变（用于滚动调整）"""
@@ -418,6 +534,11 @@ class ModernEntry(tk.Canvas):
 
         # 处理不同按键
         if keysym == "BackSpace":
+            # 如果有选择区域，删除选择区域
+            if self._select_start is not None and self._select_start != self._cursor_pos:
+                self.delete(0, tk.END)  # 这会触发删除选择区域
+                return
+                
             if self._cursor_pos > 0:
                 self._text = self._text[:self._cursor_pos - 1] + self._text[self._cursor_pos:]
                 self._cursor_pos -= 1
@@ -425,23 +546,72 @@ class ModernEntry(tk.Canvas):
                     _keep_cursor_fixed()
 
         elif keysym == "Delete":
+            # 如果有选择区域，删除选择区域
+            if self._select_start is not None and self._select_start != self._cursor_pos:
+                self.delete(0, tk.END)  # 这会触发删除选择区域
+                return
+                
             if self._cursor_pos < len(self._text):
                 self._text = self._text[:self._cursor_pos] + self._text[self._cursor_pos + 1:]
                 if not first_key_after_focus_in:
                     _keep_cursor_fixed()
 
         elif keysym == "Left":
-            self._cursor_pos = max(0, self._cursor_pos - 1)
+            if shift_pressed:
+                # Shift+左键：扩展选择范围
+                if self._select_start is None:
+                    self._select_start = self._cursor_pos
+                self._cursor_pos = max(0, self._cursor_pos - 1)
+            else:
+                # 普通左键：移动光标并清除选择
+                self._select_start = None
+                self._clear_selection()
+                self._cursor_pos = max(0, self._cursor_pos - 1)
+                
         elif keysym == "Right":
-            self._cursor_pos = min(len(self._text), self._cursor_pos + 1)
+            if shift_pressed:
+                # Shift+右键：扩展选择范围
+                if self._select_start is None:
+                    self._select_start = self._cursor_pos
+                self._cursor_pos = min(len(self._text), self._cursor_pos + 1)
+            else:
+                # 普通右键：移动光标并清除选择
+                self._select_start = None
+                self._clear_selection()
+                self._cursor_pos = min(len(self._text), self._cursor_pos + 1)
+                
         elif keysym == "Home":
-            self._cursor_pos = 0
+            if shift_pressed:
+                # Shift+Home：选择到开头
+                if self._select_start is None:
+                    self._select_start = self._cursor_pos
+                self._cursor_pos = 0
+            else:
+                # Home：移动到开头并清除选择
+                self._select_start = None
+                self._clear_selection()
+                self._cursor_pos = 0
+                
         elif keysym == "End":
-            self._cursor_pos = len(self._text)
+            if shift_pressed:
+                # Shift+End：选择到结尾
+                if self._select_start is None:
+                    self._select_start = self._cursor_pos
+                self._cursor_pos = len(self._text)
+            else:
+                # End：移动到结尾并清除选择
+                self._select_start = None
+                self._clear_selection()
+                self._cursor_pos = len(self._text)
+                
         elif event.char and event.char.isprintable():
             # 检查最大长度限制
             if self.max_length is not None and len(self._text) >= self.max_length:
                 return  # 已达到最大长度，不再接受输入
+                
+            # 如果有选择区域，先删除选择区域
+            if self._select_start is not None and self._select_start != self._cursor_pos:
+                self.delete(0, tk.END)  # 这会触发删除选择区域
                 
             self._text = self._text[:self._cursor_pos] + event.char + self._text[self._cursor_pos:]
             self._cursor_pos += 1
@@ -454,6 +624,21 @@ class ModernEntry(tk.Canvas):
         self._refresh_text_and_cursor()
         self._scroll_to_cursor()
     
+    def _on_copy(self, event):
+        """复制选中的文本"""
+        selected_text = self.get_selected_text()
+        if selected_text:
+            self.clipboard_clear()
+            self.clipboard_append(selected_text)
+        return "break"
+    
+    def _select_all(self, event):
+        """全选文本"""
+        self._select_start = 0
+        self._cursor_pos = len(self._text)
+        self._refresh_text_and_cursor()
+        return "break"
+
     def _on_paste(self, event):
         """处理粘贴事件"""
         try:
@@ -482,6 +667,10 @@ class ModernEntry(tk.Canvas):
             if len(clipboard_text) > remaining:
                 clipboard_text = clipboard_text[:remaining]
         
+        # 如果有选择区域，先删除选择区域
+        if self._select_start is not None and self._select_start != self._cursor_pos:
+            self.delete(0, tk.END)  # 这会触发删除选择区域
+        
         # 在光标位置插入文本
         self.insert(self._cursor_pos, clipboard_text)
         return "break"  # 阻止默认处理
@@ -504,6 +693,9 @@ class ModernEntry(tk.Canvas):
         
         # 重绘边框（焦点状态）
         self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=True)
+        
+        # 更新选择区域显示
+        self._update_selection_visual()
 
     def _on_focus_out(self, event=None):
         """失去焦点事件处理"""
@@ -527,10 +719,40 @@ class ModernEntry(tk.Canvas):
 
         # 重绘边框（非焦点状态）
         self._redraw_rect(self.winfo_width(), self.winfo_height(), focus=False)
+        
+        # 清除选择
+        self._select_start = None
+        self._clear_selection()
 
     def _on_tab(self, event):
         """Tab键事件处理（空实现）"""
         pass
+    def _get_char_index_at_x(self, x):
+        """根据x坐标获取对应的字符索引"""
+        click_x_text = x - (self.text_x + self._text_left)
+        
+        # 处理空文本的情况
+        if not self._text:
+            return 0
+        
+        # 使用二分查找优化性能
+        left, right = 0, len(self._text)
+        while left < right:
+            mid = (left + right) // 2
+            substr_width = self._font.measure(self._text[:mid])
+            if substr_width <= click_x_text:
+                left = mid + 1
+            else:
+                right = mid
+        
+        # 确定最接近的位置
+        if left > 0:
+            prev_width = self._font.measure(self._text[:left-1])
+            curr_width = self._font.measure(self._text[:left])
+            if abs(click_x_text - prev_width) < abs(click_x_text - curr_width):
+                return left - 1
+        
+        return left
 
     # ====================== 滚动相关方法 ======================
     def _scroll_to_cursor(self):
@@ -571,6 +793,7 @@ class ModernEntry(tk.Canvas):
         # 更新文本位置
         self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
         self._update_cursor()
+        self._update_selection_visual()
 
     # ====================== 布局和绘制相关方法 ======================
     def _on_resize(self, event):
@@ -716,6 +939,11 @@ class DemoApp:
         tk.Label(
             header_frame, text="Smooth cursor animation", font=("Segoe UI", 10),
             fg=PLACEHOLDER_COLOR, bg=BG_COLOR).pack(side="left", padx=(10, 0))
+            
+        # 添加选择功能提示
+        tk.Label(
+            header_frame, text="(Now with selection support!)", font=("Segoe UI", 9),
+            fg=SELECTION_COLOR, bg=BG_COLOR).pack(side="right", padx=(0, 10))
 
     def _create_labeled_entry(self, parent, label_text, placeholder, row, fixed_size=True, max_length=MAX_TEXT_LENGTH):
         """创建带标签的输入框"""
@@ -753,6 +981,14 @@ class DemoApp:
             activeforeground=BUTTON_ACTIVE_FG, relief="flat", padx=20, pady=6,
             command=self.clear_form)
         clear_btn.pack(side="right")
+        
+        # 复制按钮
+        copy_btn = tk.Button(
+            button_frame, text="Copy Selected", font=("Segoe UI", 10),
+            bg=BUTTON_SECONDARY_BG, fg=BUTTON_SECONDARY_FG, activebackground=BUTTON_SECONDARY_ACTIVE_BG,
+            activeforeground=BUTTON_ACTIVE_FG, relief="flat", padx=20, pady=6,
+            command=self.copy_selected)
+        copy_btn.pack(side="left")
 
     def _on_root_click(self, event):
         """根窗口点击事件处理"""
@@ -785,6 +1021,22 @@ class DemoApp:
         self.entry_1.set("")
         self.entry_2.set("")
         self.root.focus_set()
+        
+    def copy_selected(self):
+        """复制选中的文本"""
+        # 尝试从当前焦点输入框复制
+        focus = self.root.focus_get()
+        if isinstance(focus, ModernEntry):
+            selected_text = focus.get_selected_text()
+            if selected_text:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(selected_text)
+                # 显示复制成功消息
+                success = tk.Label(
+                    self.root, text="✓ Copied to clipboard!",
+                    font=("Segoe UI", 9), fg=SUCCESS_COLOR, bg=BG_COLOR)
+                success.place(relx=0.5, rely=0.85, anchor="center")
+                self.root.after(SUCCESS_MESSAGE_DURATION, success.destroy)
 
 if __name__ == "__main__":
     root = tk.Tk()
