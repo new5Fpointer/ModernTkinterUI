@@ -245,32 +245,33 @@ class CustomWidgetsTestApp:
         """创建输入框测试标签页"""
         tab = ttk.Frame(self.notebook)
         self.notebook.add(tab, text="现代输入框测试")
-        
+
         # 创建输入框测试区域
         entry_frame = ttk.Frame(tab)
         entry_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
-        
+
         # 标题
         header = ttk.Label(entry_frame, text="ModernEntry 控件测试", style="Header.TLabel")
         header.pack(pady=(0, 15))
-        
-        # 基本输入框
-        self.create_entry_section(entry_frame, "基本输入框", placeholder="在此输入...")
-        
-        # 带最大长度的输入框
-        self.create_entry_section(entry_frame, "带最大长度的输入框 (10字符)", 
-                                 placeholder="最多输入10字符...", max_length=10)
-        
-        # 不同样式的输入框
-        self.create_entry_section(entry_frame, "不同样式的输入框", 
-                                 bg_color="#3a3a3a", border_normal="#ff6b6b", 
-                                 border_focus="#ff8e8e", text_color="#ffffff",
-                                 placeholder="红色边框...")
-        
-        # 不同尺寸的输入框
-        self.create_entry_section(entry_frame, "不同尺寸的输入框", 
-                                 width=300, height=40, radius=12,
-                                 placeholder="宽300高40...")
+
+        # 基本输入框（固定大小）
+        self.create_entry_section(entry_frame, "基本输入框",
+                                placeholder="在此输入...", fixed_size=True)
+
+        # 带最大长度的输入框（固定大小）
+        self.create_entry_section(entry_frame, "带最大长度的输入框 (10字符)",
+                                placeholder="最多输入10字符...", max_length=10, fixed_size=True)
+
+        # 不同样式的输入框（固定大小）
+        self.create_entry_section(entry_frame, "不同样式的输入框",
+                                bg_color="#3a3a3a", border_normal="#ff6b6b",
+                                border_focus="#ff8e8e", text_color="#ffffff",
+                                placeholder="红色边框...", fixed_size=True)
+
+        # 不同尺寸的输入框（固定大小）
+        self.create_entry_section(entry_frame, "不同尺寸的输入框",
+                                width=300, height=40, radius=12,
+                                placeholder="宽300高40...", fixed_size=True)
     
     def create_entry_section(self, parent, title, **kwargs):
         """创建输入框测试部分"""
@@ -287,7 +288,7 @@ class CustomWidgetsTestApp:
         
         # 创建输入框
         entry = ModernEntry(entry_container, **kwargs)
-        entry.pack(fill=tk.X, padx=5, pady=5)
+        entry.pack(anchor='w',padx=5, pady=5)
         
         # 功能按钮
         btn_frame = ttk.Frame(entry_container)
