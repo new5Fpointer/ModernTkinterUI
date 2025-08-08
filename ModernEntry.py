@@ -9,6 +9,8 @@ DEFAULT_HEIGHT = 36
 DEFAULT_RADIUS = 8
 DEFAULT_CURSOR_HEIGHT = 18
 DEFAULT_CURSOR_BLINK_SPEED = 450
+SELECTION_HEIGHT_OFFSET = -3
+ENTRY_FONT_SIZE = 12
 TEXT_PADDING_X = 12
 MIN_CURSOR_HEIGHT = 14
 CURSOR_VERTICAL_OFFSET_REDUCTION = 4
@@ -34,7 +36,6 @@ SELECTION_COLOR = "#348b81"
 
 # 字体常量
 ENTRY_FONT_FAMILY = "Segoe UI"
-ENTRY_FONT_SIZE = 12
 
 # 应用常量
 APP_TITLE = "Modern Entry Demo"
@@ -470,9 +471,10 @@ class ModernEntry(tk.Canvas):
 
         # 计算文本高度
         font_height = self._font.metrics("linespace")
-        y1 = self.text_y
-        y2 = y1 + font_height
-
+        sel_height = font_height + SELECTION_HEIGHT_OFFSET
+        offset_y = (font_height - sel_height) // 2   # 让缩小后的区域仍垂直居中
+        y1 = self.text_y + offset_y
+        y2 = y1 + sel_height
         # 创建选择区域矩形
         self._selection_rect = self.create_rectangle(
             start_x, y1, end_x, y2,
@@ -495,7 +497,7 @@ class ModernEntry(tk.Canvas):
                 x=self.text_x,
                 y=self.text_y + self.cursor_y_offset,
                 height=self._cursor_height,
-                width=1,
+                width=2,
                 color=CURSOR_COLOR,
                 blink_speed=DEFAULT_CURSOR_BLINK_SPEED
             )
