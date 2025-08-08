@@ -1,3 +1,4 @@
+# test.py - 深色主题优化版
 import tkinter as tk
 from tkinter import ttk
 from button import RoundedButton
@@ -8,7 +9,7 @@ class CustomWidgetsTestApp:
         self.root = root
         self.root.title("自定义控件测试")
         self.root.geometry("800x600")
-        self.root.configure(bg="#1e1e1e")
+        self.root.configure(bg="#1e1e1e")  # 设置根窗口背景色
 
         # 提前定义状态变量和方法
         self.status_var = tk.StringVar(value="就绪")
@@ -17,26 +18,69 @@ class CustomWidgetsTestApp:
             self.root.after(3000, lambda: self.status_var.set("就绪"))
         )
 
-        # 创建样式
+        # 创建深色主题样式
         self.style = ttk.Style()
-        self.style.configure("TFrame", background="#1e1e1e")
-        self.style.configure("Header.TLabel", background="#1e1e1e", foreground="#e0e0e0", font=("Arial", 12, "bold"))
-        self.style.configure("Status.TLabel", background="#1e1e1e", foreground="#888888", font=("Arial", 9))
+        
+        # 设置深色主题基础颜色
+        bg_color = "#1e1e1e"
+        fg_color = "#e0e0e0"
+        accent_color = "#4ec9b0"
+        
+        # 配置各种组件的深色样式
+        self.style.theme_use('clam')  # 使用可自定义的clam主题
+        
+        # 通用样式配置
+        self.style.configure(".", background=bg_color, foreground=fg_color)
+        self.style.configure("TFrame", background=bg_color)
+        self.style.configure("TNotebook", background=bg_color)
+        self.style.configure("TNotebook.Tab", 
+                            background="#2d2d2d", 
+                            foreground=fg_color,
+                            padding=[10, 5])
+        self.style.map("TNotebook.Tab", 
+                      background=[("selected", "#3a3a3a")],
+                      foreground=[("selected", accent_color)])
+        
+        self.style.configure("TLabel", background=bg_color, foreground=fg_color)
+        self.style.configure("Header.TLabel", 
+                            background=bg_color, 
+                            foreground=accent_color, 
+                            font=("Arial", 12, "bold"))
+        self.style.configure("Status.TLabel", 
+                            background=bg_color, 
+                            foreground="#888888", 
+                            font=("Arial", 9))
+        
+        # 标签框架样式
+        self.style.configure("TLabelframe", 
+                            background=bg_color, 
+                            foreground=accent_color,
+                            bordercolor="#444444")
+        self.style.configure("TLabelframe.Label", 
+                            background=bg_color, 
+                            foreground=accent_color)
+        
+        # 列表框样式
+        self.style.configure("TListbox", 
+                            background="#2d2d2d", 
+                            foreground=fg_color,
+                            selectbackground=accent_color,
+                            selectforeground="#ffffff")
 
         # 创建主框架
         main_frame = ttk.Frame(root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
         # 创建标签页
-        self.notebook = ttk.Notebook(main_frame)
+        self.notebook = ttk.Notebook(main_frame, style="TNotebook")
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
         # 创建按钮测试标签页
         self.create_button_tab()
-
+        
         # 创建输入框测试标签页
         self.create_entry_tab()
-
+        
         # 创建组合测试标签页
         self.create_combination_tab()
 
@@ -368,48 +412,51 @@ class CustomWidgetsTestApp:
         self.update_status("表单已重置")
     
     def create_data_display(self, parent):
-        """创建数据展示区域"""
+        """创建数据展示区域（修复版）"""
         display_frame = ttk.LabelFrame(parent, text="数据展示")
         display_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
+
         # 输入区域
         input_frame = ttk.Frame(display_frame)
         input_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         ttk.Label(input_frame, text="输入数据:", style="Status.TLabel").pack(side=tk.LEFT, padx=5)
         self.data_entry = ModernEntry(input_frame, width=200, placeholder="输入要添加的数据...")
         self.data_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        
+
         add_btn = RoundedButton(
-            input_frame, text="添加", 
+            input_frame, text="添加",
             command=self.add_data_item,
             width=60, height=25
         )
         add_btn.pack(side=tk.LEFT, padx=5)
-        
-        # 数据显示区域
+
+        # 数据显示区域（使用 tk.Listbox 而不是 ttk.Treeview）
         self.data_listbox = tk.Listbox(
-            display_frame, 
-            bg="#2d2d2d", fg="#e0e0e0",
-            selectbackground="#4ec9b0", selectforeground="#ffffff",
-            bd=0, highlightthickness=0
+            display_frame,
+            bg="#2d2d2d",
+            fg="#e0e0e0",
+            selectbackground="#4ec9b0",
+            selectforeground="#ffffff",
+            bd=0,
+            highlightthickness=0
         )
         self.data_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
+
         # 操作按钮
         btn_frame = ttk.Frame(display_frame)
         btn_frame.pack(fill=tk.X, padx=5, pady=5)
-        
+
         remove_btn = RoundedButton(
-            btn_frame, text="删除选中项", 
+            btn_frame, text="删除选中项",
             command=self.remove_selected_item,
             width=100, height=25,
             button_color="#ff6b6b", hover_color="#ff8e8e", press_color="#e05a5a"
         )
         remove_btn.pack(side=tk.LEFT, padx=5)
-        
+
         clear_btn = RoundedButton(
-            btn_frame, text="清空列表", 
+            btn_frame, text="清空列表",
             command=self.clear_data_list,
             width=80, height=25
         )
@@ -422,24 +469,25 @@ class CustomWidgetsTestApp:
             self.update_status("请输入要添加的数据")
             return
         
-        self.data_listbox.insert(tk.END, data)
+        self.data_listbox.insert("", "end", text=data)
         self.data_entry.set("")
         self.update_status(f"已添加: {data}")
     
     def remove_selected_item(self):
         """删除选中项"""
-        selection = self.data_listbox.curselection()
+        selection = self.data_listbox.selection()
         if not selection:
             self.update_status("请选择要删除的项")
             return
         
-        item = self.data_listbox.get(selection[0])
+        item = self.data_listbox.item(selection[0], "text")
         self.data_listbox.delete(selection[0])
         self.update_status(f"已删除: {item}")
     
     def clear_data_list(self):
         """清空数据列表"""
-        self.data_listbox.delete(0, tk.END)
+        for item in self.data_listbox.get_children():
+            self.data_listbox.delete(item)
         self.update_status("数据列表已清空")
 
 if __name__ == "__main__":

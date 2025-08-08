@@ -23,7 +23,7 @@ TEXT_COLOR = "#e0e0e0"
 PLACEHOLDER_COLOR = "#888888"
 CURSOR_COLOR = "#6bd8c9"
 SELECTION_COLOR = "#348b81"
-ENTRY_FONT_FAMILY = "Segoe UI"
+ENTRY_FONT_FAMILY = "dengxian"
 
 # ====================== PureCursor ======================
 class PureCursor:
