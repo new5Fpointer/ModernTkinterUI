@@ -412,7 +412,7 @@ class CustomWidgetsTestApp:
         self.update_status("表单已重置")
     
     def create_data_display(self, parent):
-        """创建数据展示区域（修复版）"""
+        """创建数据展示区域"""
         display_frame = ttk.LabelFrame(parent, text="数据展示")
         display_frame.pack(fill=tk.BOTH, expand=True, pady=10)
 
@@ -431,7 +431,6 @@ class CustomWidgetsTestApp:
         )
         add_btn.pack(side=tk.LEFT, padx=5)
 
-        # 数据显示区域（使用 tk.Listbox 而不是 ttk.Treeview）
         self.data_listbox = tk.Listbox(
             display_frame,
             bg="#2d2d2d",
@@ -468,26 +467,26 @@ class CustomWidgetsTestApp:
         if not data:
             self.update_status("请输入要添加的数据")
             return
-        
-        self.data_listbox.insert("", "end", text=data)
+
+        self.data_listbox.insert(tk.END, data)
         self.data_entry.set("")
         self.update_status(f"已添加: {data}")
     
     def remove_selected_item(self):
         """删除选中项"""
-        selection = self.data_listbox.selection()
+        selection = self.data_listbox.curselection()
         if not selection:
             self.update_status("请选择要删除的项")
             return
-        
-        item = self.data_listbox.item(selection[0], "text")
-        self.data_listbox.delete(selection[0])
+
+        index = selection[0]
+        item = self.data_listbox.get(index)
+        self.data_listbox.delete(index)
         self.update_status(f"已删除: {item}")
     
     def clear_data_list(self):
         """清空数据列表"""
-        for item in self.data_listbox.get_children():
-            self.data_listbox.delete(item)
+        self.data_listbox.delete(0, tk.END)
         self.update_status("数据列表已清空")
 
 if __name__ == "__main__":
