@@ -256,22 +256,22 @@ class CustomWidgetsTestApp:
 
         # 基本输入框（固定大小）
         self.create_entry_section(entry_frame, "基本输入框",
-                                placeholder="在此输入...", fixed_size=True)
+                                placeholder="在此输入...", fixed_size=False)
 
         # 带最大长度的输入框（固定大小）
         self.create_entry_section(entry_frame, "带最大长度的输入框 (10字符)",
-                                placeholder="最多输入10字符...", max_length=10, fixed_size=True)
+                                placeholder="最多输入10字符...", max_length=10, fixed_size=False)
 
         # 不同样式的输入框（固定大小）
         self.create_entry_section(entry_frame, "不同样式的输入框",
                                 bg_color="#3a3a3a", border_normal="#ff6b6b",
                                 border_focus="#ff8e8e", text_color="#ffffff",
-                                placeholder="红色边框...", fixed_size=True)
+                                placeholder="红色边框...", fixed_size=False)
 
         # 不同尺寸的输入框（固定大小）
         self.create_entry_section(entry_frame, "不同尺寸的输入框",
                                 width=300, height=40, radius=12,
-                                placeholder="宽300高40...", fixed_size=True)
+                                placeholder="宽300高40...", fixed_size=False)
     
     def create_entry_section(self, parent, title, **kwargs):
         """创建输入框测试部分"""
@@ -494,3 +494,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = CustomWidgetsTestApp(root)
     root.mainloop()
+# 修复字符逻辑的时候是最后一次出现可变输入框

@@ -110,13 +110,12 @@ class ModernEntry(tk.Canvas):
         ]
 
     def _redraw_rect(self, w, h, focus=False):
-        """重绘圆角矩形背景和边框（只改颜色，不重建对象）"""
-        if hasattr(self, '_rect_outline') and self._rect_outline:
-            color = self._current_border_focus if focus else self.border_normal
-            self.itemconfig(self._rect_outline, outline=color)
-            return
+        """无条件重绘：背景和边框都重新画"""
+        if hasattr(self, '_rect_bg'):
+            self.delete(self._rect_bg)
+        if hasattr(self, '_rect_outline'):
+            self.delete(self._rect_outline)
 
-        # 第一次创建
         r = min(h // 2, self._radius)
         x1, y1, x2, y2 = 0, 0, w - 1, h - 1
         pts = self._rounded_rect_pts(x1, y1, x2, y2, r)
@@ -124,12 +123,11 @@ class ModernEntry(tk.Canvas):
         self._rect_bg = self.create_polygon(
             pts, fill=self.bg_color, outline="", smooth=True)
         self._rect_outline = self.create_polygon(
-            pts, fill="", outline=self.border_focus if focus else self.border_normal,
+            pts, fill="", outline=self.border_focus if self.focus_get() == self else self.border_normal,
             smooth=True, width=1)
 
-        # 保证文本和光标始终在最上层
         self.tag_raise(self.text_id)
-        if hasattr(self, 'cursor') and self.cursor:   # 安全访问
+        if hasattr(self, 'cursor') and self.cursor:
             self.tag_raise(self.cursor.cursor_id)
 
     def __init__(self, master, width=DEFAULT_WIDTH, height=DEFAULT_HEIGHT,
@@ -351,6 +349,7 @@ class ModernEntry(tk.Canvas):
         substr = self._text[:self._cursor_pos]
         cursor_x = self.text_x + self._font.measure(substr) + self._text_left
         cursor_y = self.text_y + self.cursor_y_offset
+        print("光标坐标 -> x:", cursor_x, "y:", cursor_y)
         self.cursor.move(cursor_x, cursor_y)
 
     def _on_click(self, event):
@@ -599,36 +598,24 @@ class ModernEntry(tk.Canvas):
         self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
         self._update_cursor()
         self._update_selection_visual()
-
+        
     def _on_resize(self, event):
         if self.fixed_size:
             return
+
         w, h = event.width, event.height
+
         self._redraw_rect(w, h, focus=(self.focus_get() == self))
         font_height = self._font.metrics("linespace")
         self.text_y = (h - font_height) // 2
-        if self.cursor is None:
-            self._create_cursor()
         cursor_h = max(MIN_CURSOR_HEIGHT, font_height - CURSOR_VERTICAL_OFFSET_REDUCTION)
-        self.cursor.set_height(cursor_h)
-        current_text_width = self._font.measure(self._text)
+        if self.cursor:
+            self.cursor.set_height(cursor_h)
+
+        text_width = self._font.measure(self._text)
         visible_w = w - 2 * self.text_x
-        current_cursor_rel_x = self._font.measure(self._text[:self._cursor_pos])
-        current_visible_start = -self._text_left
-        current_visible_end = current_visible_start + visible_w
-        if current_text_width > visible_w:
-            if current_cursor_rel_x < current_visible_start:
-                self._text_left = -current_cursor_rel_x
-            elif current_cursor_rel_x > current_visible_end:
-                self._text_left = -(current_cursor_rel_x - visible_w)
-            else:
-                visible_ratio = (current_cursor_rel_x - current_visible_start) / (current_visible_end - current_visible_start)
-                new_visible_start = max(0, min(current_text_width - visible_w,
-                                               current_text_width * visible_ratio - visible_w * visible_ratio))
-                self._text_left = -new_visible_start
-        else:
-            self._text_left = 0
-        min_left = min(0, visible_w - current_text_width)
-        max_left = 0
-        self._text_left = max(min_left, min(max_left, self._text_left))
-        self._scroll_to_cursor()
+        self._text_left = visible_w - text_width if text_width > visible_w else 0
+
+        self._cursor_pos = len(self._text)
+        self.coords(self.text_id, self.text_x + self._text_left, self.text_y)
+        self._update_cursor()
